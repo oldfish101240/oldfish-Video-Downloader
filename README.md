@@ -2,7 +2,7 @@
 一個可以簡單下載YouTube影片的軟體  
 
 ## 如何使用  
-1.解壓縮oldfish_downloader_v0.1.0.zip  
+1.解壓縮oldfish_downloader_vX.X.X.zip  
 2.打開oldfish_downloader.exe  
 3.輸入欲下載的影片網址  
 4.選擇正確畫質、檔案格式(低於720p的影片目前無法下載)  
