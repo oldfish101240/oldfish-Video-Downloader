@@ -1,5 +1,6 @@
 # oldfish Video Downloader  
-![GitHub release](https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader)![Visits](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/oldfish101240/oldfish-Video-Downloader/main/visitor.json)
+![GitHub release](https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader?label=最新版本)![下載次數](https://img.shields.io/github/downloads/oldfish101240/oldfish-Video-Downloader/latest/total?label=下載次數)
+
 
 
 一個可以簡單下載YouTube影片的軟體  
