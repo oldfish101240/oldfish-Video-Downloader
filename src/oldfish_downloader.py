@@ -277,7 +277,7 @@ class OldfishDownloader(QWidget):
 
 
         # 新增 "傳送到 GitHub 頁面" 選項
-        github_action = QAction("傳送到 GitHub 頁面", self)
+        github_action = QAction("開啟 GitHub 頁面", self)
         github_action.triggered.connect(self.open_github_page)
         help_menu.addAction(github_action)
 
@@ -300,7 +300,7 @@ class OldfishDownloader(QWidget):
 
     def show_about_dialog(self):
         # 顯示 "關於 Downloader" 的訊息框
-        QMessageBox.information(self, "關於 Downloader", "Oldfish Video Downloader\n版本：0.2.0\n作者：oldfish")
+        QMessageBox.information(self, "關於 Downloader", "oldfish Video Downloader\n版本：0.2.1\n作者：oldfish")
 
     def init_ui(self):
         self.url_input = QLineEdit(self)
