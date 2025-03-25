@@ -1,6 +1,10 @@
 [![Typing SVG](https://readme-typing-svg.demolab.com?font=Ubuntu&size=70&duration=2000&pause=200&color=00A6DA&center=true&vCenter=true&multiline=true&width=1000&height=200&lines=oldfish+Video+Downloader;-%E7%94%B1%E8%80%81%E9%AD%9A%E8%A3%BD%E4%BD%9C)](https://git.io/typing-svg)
 
-[![最新版本](https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader?label=最新版本)](https://github.com/oldfish101240/oldfish-Video-Downloader/releases)
+<p align="center">
+  <a href="https://github.com/oldfish101240/oldfish-Video-Downloader/releases">
+    <img src="https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader?label=最新版本" alt="最新版本">
+  </a>
+</p>
 
 
 ## 簡介
