@@ -2,6 +2,7 @@ build/
 dist/
 downloads/
 download-old/
+ffmpeg-7.1.1-essentials_build
 oldfish_downloader.spec
 oldfish_downloader_oldUI.py
 oldfish_downloader_only_onevideo.py

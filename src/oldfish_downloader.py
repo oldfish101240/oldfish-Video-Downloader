@@ -15,10 +15,11 @@ import winsound
 import concurrent.futures
 import time
 import yt_dlp
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtGui import QIcon, QAction, QPalette
 import json
 import subprocess
 import webbrowser
+import platform  # 新增匯入 platform 模組
 
 base_path = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.getcwd()
 ffmpeg_path = os.path.join(base_path, "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
@@ -255,13 +256,16 @@ class OldfishDownloader(QWidget):
         self.setFixedSize(500, 300)  # 設置視窗的固定大小
         self.setWindowIcon(QIcon("icon.ico"))  # 設定視窗圖示
 
-        
-        # 設置 status_label 並放大字體
+        # 設置 status_label，放大字體
         self.status_label = QLabel("", self)
-        self.status_label.setStyleSheet("font-size: 16px; color: white;")  # 放大字體大小
+        self.status_label.setStyleSheet("font-size: 30px;")  # 放大字體
 
         self.init_ui()
         self.init_menu_bar()  # 初始化工具欄
+
+    def update_status_label_color(self):
+        # 移除顏色設定，保持系統預設樣式
+        pass
 
     def init_menu_bar(self):
         # 建立工具欄
@@ -365,9 +369,9 @@ class OldfishDownloader(QWidget):
         url = self.url_input.text().strip()
         resolution = self.resolution_select.currentText()
         file_format = self.format_select.currentText()
-        
+
         # 驗證輸入
-        if not url:
+        if not url.startswith("http"):
             self.status_label.setText("請輸入有效的 YouTube 影片網址")
             return
         if resolution == "請選擇解析度":
