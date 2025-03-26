@@ -49,6 +49,7 @@ def download_file(url, filename, progress_callback, cancel_flag):
             os.rename(filename + ".part", filename)
     except Exception as e:
         print(f"下載失敗：{e}")
+        
 
 class Installer(QWidget):
     installation_finished = pyqtSignal()
@@ -387,9 +388,34 @@ class OldfishDownloader(QWidget):
         self.download_thread.start()
     
     def open_download_folder(self):
-        os.startfile(os.path.abspath("downloads"))
+        downloads_path = os.path.abspath("downloads")
+        if not os.path.isdir(downloads_path):  # 確保是有效的資料夾
+            QMessageBox.warning(self, "提示", "系統找不到下載資料夾，請先下載影片後再試。")
+            return
+        try:
+            os.startfile(downloads_path)
+        except Exception as e:
+            QMessageBox.critical(self, "錯誤", f"無法開啟資料夾：{e}")
+            return
 
 if __name__ == "__main__":
+    try:
+        # 確保工作目錄為程式所在目錄
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        os.chdir(script_dir)
+        print(f"當前工作目錄: {os.getcwd()}")  # 打印當前工作目錄
+
+        # 檢查並建立 downloads 資料夾
+        downloads_path = os.path.join(script_dir, "downloads")
+        if not os.path.isdir(downloads_path):
+            print(f"資料夾 {downloads_path} 不存在，正在建立...")
+            os.makedirs(downloads_path, exist_ok=True)
+        else:
+            print(f"資料夾 {downloads_path} 已存在。")
+    except Exception as e:
+        print(f"初始化工作目錄或資料夾失敗：{e}")
+        sys.exit(1)
+
     app = QApplication(sys.argv)
 
     if ffmpeg_installed:
@@ -407,5 +433,5 @@ if __name__ == "__main__":
     print(f"Python executable: {sys.executable}")
     print(f"Arguments: {sys.argv}")
 
-sys.exit(app.exec())
+    sys.exit(app.exec())
 
