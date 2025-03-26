@@ -198,7 +198,7 @@ class DownloadThread(QThread):
         base_path = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.getcwd()
         ffmpeg_path = os.path.join(base_path, "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
         if not ffmpeg_path or not os.path.exists(ffmpeg_path):
-            self.status.emit("錯誤: 找不到 FFmpeg，請檢查下載是否成功")
+            self.status.emit("錯誤: 找不到 FFmpeg，\n         請檢查下載是否成功")
             return
         
         ydl_opts = {
@@ -209,7 +209,8 @@ class DownloadThread(QThread):
 
         # 動態生成格式選項
         if self.file_format == "mp4":
-            ydl_opts["format"] = f"bestvideo[height={self.resolution[:-1]}][ext=mp4]+bestaudio[ext=m4a]/best[height={self.resolution[:-1]}]"
+            resolution_height = self.resolution[:-1]  # 移除 'p'，僅保留數字
+            ydl_opts["format"] = f"bestvideo[height={resolution_height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height={resolution_height}]/best"
         elif self.file_format == "mp3":
             ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio"
             ydl_opts["postprocessors"] = [{
@@ -217,11 +218,32 @@ class DownloadThread(QThread):
                 "preferredcodec": "mp3",
                 "preferredquality": "192",
             }]
+        elif self.file_format in ["wmv", "avi", "mkv", "flv", "webm"]:
+            resolution_height = self.resolution[:-1]
+            ydl_opts["format"] = f"bestvideo[height={resolution_height}]+bestaudio/best"
+            ydl_opts["postprocessors"] = [{
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": self.file_format
+            }]
+            self.status.emit("正在轉檔(可能需要數分鐘)...")  # 顯示轉檔提示
+        else:
+            self.status.emit(f"錯誤：不支援的格式 {self.file_format}")
+            return
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # 提取影片資訊
                 info = ydl.extract_info(self.url, download=False)
+                available_formats = [
+                    f"{fmt['ext']} - {fmt.get('height', 'N/A')}p"
+                    for fmt in info.get('formats', [])
+                ]
+                selected_format = f"{self.file_format} - {self.resolution}"
+                if selected_format not in available_formats:
+                    self.status.emit(f"錯誤：所選格式 {selected_format} 不可用，請選擇其他格式")
+                    self.list_available_formats()
+                    return
+
                 file_name = ydl.prepare_filename(info)  # 生成目標檔案名稱
                 if os.path.exists(file_name):
                     self.status.emit("錯誤：已下載過選擇的影片")
@@ -234,19 +256,45 @@ class DownloadThread(QThread):
         except yt_dlp.utils.DownloadError as e:
             error_message = str(e)
             if "Requested format is not available" in error_message:
-                self.status.emit("錯誤：此影片未提供所選擇的格式，\n            請選擇別的影片格式再試")
+                self.status.emit("錯誤：此影片未提供所選擇的格式，正在列出可用格式...")
+                self.list_available_formats()
             else:
                 self.status.emit(f"下載失敗: {error_message}")
         except Exception as e:
             self.status.emit(f"下載失敗: {e}")
 
+    def list_available_formats(self):
+        try:
+            with yt_dlp.YoutubeDL() as ydl:
+                info = ydl.extract_info(self.url, download=False)
+                formats = info.get("formats", [])
+                format_list = "\n".join(
+                    [f"{fmt['format_id']}: {fmt['ext']} - {fmt.get('height', 'N/A')}p" for fmt in formats]
+                )
+                # 使用彈出視窗顯示可用格式
+                self.show_formats_popup(format_list)
+        except Exception as e:
+            self.status.emit(f"無法列出可用格式: {e}")
+
+    def show_formats_popup(self, format_list):
+        """顯示可用格式的彈出視窗"""
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle("可用格式")
+        msg_box.setText("以下是此影片的可用格式：")
+        msg_box.setDetailedText(format_list)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
+
     def hook(self, d):
+        """處理下載進度更新的回調函數"""
         if d["status"] == "downloading":
             downloaded = d.get("downloaded_bytes", 0)
             total = d.get("total_bytes", d.get("total_bytes_estimate", 1))
-            percent = int(downloaded / total * 100)
+            percent = int(downloaded / total * 100) if total > 0 else 0
             self.progress.emit(percent)
             self.status.emit(f"下載進度: {percent}%")
+        elif d["status"] == "finished":
+            self.status.emit("下載完成，正在處理檔案...")
 
 class OldfishDownloader(QWidget):
     def __init__(self):
@@ -301,7 +349,7 @@ class OldfishDownloader(QWidget):
 
     def show_about_dialog(self):
         # 顯示 "關於 Downloader" 的訊息框
-        QMessageBox.information(self, "關於 Downloader", "oldfish Video Downloader\n版本：0.2.1\n作者：oldfish")
+        QMessageBox.information(self, "關於 Downloader", "oldfish Video Downloader\n版本：0.2.2\n作者：oldfish")
 
     def init_ui(self):
         self.url_input = QLineEdit(self)
@@ -317,7 +365,7 @@ class OldfishDownloader(QWidget):
         # 格式選單
         self.format_select = QComboBox(self)
         self.format_select.addItem("請選擇格式")  # 預設選項
-        self.format_select.addItems(["MP4", "MP3"])
+        self.format_select.addItems(["MP4", "MP3"])  # 新增 WEBM 格式
         self.format_select.setCurrentIndex(0)  # 預設選中「請選擇格式」
         self.format_select.model().item(0).setEnabled(False)  # 禁用「請選擇格式」
 
