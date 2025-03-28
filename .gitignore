@@ -3,6 +3,8 @@ dist/
 downloads/
 download-old/
 downloads-OLD/
+old_things/
+.vs/
 ffmpeg-7.1.1-essentials_build
 oldfish_downloader.spec
 oldfish_downloader_oldUI.py
