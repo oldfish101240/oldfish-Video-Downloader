@@ -436,50 +436,51 @@ class SettingsDialog(QDialog):
         # 標籤頁
         tabs = QTabWidget()
         general_tab = QWidget()
-        advanced_tab = QWidget()
+        about_tab = QWidget()
 
-        # 一般設定
-        general_layout = QFormLayout()
-        self.auto_update_checkbox = QCheckBox("自動檢查更新")
-        general_layout.addRow("自動更新：", self.auto_update_checkbox)
-        self.download_threads_spinbox = QSpinBox()
-        self.download_threads_spinbox.setRange(1, 10)
-        self.download_threads_spinbox.setValue(4)
-        general_layout.addRow("下載執行緒數量：", self.download_threads_spinbox)
+        # 一般標籤頁
+        general_layout = QVBoxLayout()
+        general_label = QLabel("一般設定內容")
+        general_layout.addWidget(general_label)
         general_tab.setLayout(general_layout)
 
-        # 高級設定
-        advanced_layout = QVBoxLayout()
-        self.enable_logging_checkbox = QCheckBox("啟用日誌")
-        advanced_layout.addWidget(self.enable_logging_checkbox)
-        advanced_tab.setLayout(advanced_layout)
+        # 關於標籤頁
+        about_layout = QVBoxLayout()
+        title_label = QLabel("oldfish Video Downloader")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")  # 放大字體
+        version_label = QLabel("應用程式版本: 0.3.0")
+        author_label = QLabel("作者: 老魚oldfish")
+        link_label = QLabel('<a href="https://github.com/oldfish101240/oldfish-Video-Downloader">前往GitHub頁面</a>')
+        link_label.setOpenExternalLinks(True)  # 啟用外部連結
+        latest_version_label = QLabel('<a href="https://github.com/oldfish101240/oldfish-Video-Downloader/releases/latest">檢查最新版本</a>')
+        latest_version_label.setOpenExternalLinks(True)  # 啟用外部連結
+
+        about_layout.addWidget(title_label)
+        about_layout.addWidget(version_label)
+        about_layout.addWidget(author_label)
+        about_layout.addWidget(link_label)
+        about_layout.addWidget(latest_version_label)
+        about_tab.setLayout(about_layout)
 
         # 添加標籤頁
         tabs.addTab(general_tab, "一般")
-        tabs.addTab(advanced_tab, "高級")
+        tabs.addTab(about_tab, "關於")
         layout.addWidget(tabs)
 
         # 確定與取消按鈕
         button_layout = QHBoxLayout()
+        button_layout.addStretch()  # 將按鈕推到右側
         save_button = QPushButton("儲存")
-        save_button.clicked.connect(self.save_settings)
+        save_button.setFixedSize(60, 30)  # 縮短按鈕
+        save_button.clicked.connect(self.accept)
         cancel_button = QPushButton("取消")
+        cancel_button.setFixedSize(60, 30)  # 縮短按鈕
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(save_button)
         button_layout.addWidget(cancel_button)
         layout.addLayout(button_layout)
 
         self.setLayout(layout)
-
-    def save_settings(self):
-        # 儲存設定的邏輯
-        auto_update = self.auto_update_checkbox.isChecked()
-        download_threads = self.download_threads_spinbox.value()
-        enable_logging = self.enable_logging_checkbox.isChecked()
-
-        # 這裡可以將設定儲存到檔案或應用到程式
-        print(f"自動更新: {auto_update}, 下載執行緒: {download_threads}, 啟用日誌: {enable_logging}")
-        self.accept()
 
 
 if __name__ == "__main__":
