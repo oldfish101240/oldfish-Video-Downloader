@@ -15,43 +15,75 @@ import time
 # 設定日誌
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def download_file(url, output_path, progress_callback, cancel_callback):
-    try:
-        response = requests.get(url, stream=True, timeout=10)
-        total_size = int(response.headers.get('content-length', 0))
-        bytes_received = 0
-        start_time = None  # 初始化開始時間
-        for chunk in response.iter_content(chunk_size=1024):
-            if cancel_callback():
-                return
-            if start_time is None:
-                start_time = time.time()  # 設定開始時間
-            file.write(chunk)
-            bytes_received += len(chunk)
-            elapsed_time = time.time() - start_time  # 計算已經過的時間
-            speed = bytes_received / elapsed_time if elapsed_time > 0 else 0  # 計算平均速度
-            progress_callback(bytes_received, total_size, speed)
-    except Exception as e:
-        raise e
+def show_message_box(parent, title, text, icon=QMessageBox.Icon.Information):
+    """通用的訊息框，套用 icon.ico"""
+    msg_box = QMessageBox(parent)
+    msg_box.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))
+    msg_box.setWindowTitle(title)
+    msg_box.setText(text)
+    msg_box.setIcon(icon)
+    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
+    msg_box.exec()
+
+class DownloadWorker(QThread):
+    progress_updated = pyqtSignal(int, float, float)  # percent, bytes_received, speed
+    download_finished = pyqtSignal()
+    download_failed = pyqtSignal(str)
+
+    def __init__(self, url, output_path, cancel_callback):
+        super().__init__()
+        self.url = url
+        self.output_path = output_path
+        self.cancel_callback = cancel_callback
+        self.last_update_time = 0  # 用於控制更新頻率
+
+    def run(self):
+        try:
+            response = requests.get(self.url, stream=True, timeout=10)
+            total_size = int(response.headers.get('content-length', 0))
+            bytes_received = 0
+            start_time = time.time()
+
+            with open(self.output_path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if self.cancel_callback():
+                        # 刪除部分下載的檔案
+                        file.close()  # 確保檔案已關閉
+                        if os.path.exists(self.output_path):
+                            os.remove(self.output_path)
+                        return
+                    file.write(chunk)
+                    bytes_received += len(chunk)
+                    elapsed_time = time.time() - start_time
+                    speed = bytes_received / elapsed_time if elapsed_time > 0 else 0
+                    percent = int(bytes_received * 100 / total_size) if total_size > 0 else 0
+
+                    # 每秒更新一次進度
+                    current_time = time.time()
+                    if current_time - self.last_update_time >= 1:
+                        self.progress_updated.emit(percent, bytes_received, speed)
+                        self.last_update_time = current_time
+
+            self.download_finished.emit()
+        except Exception as e:
+            # 刪除部分下載的檔案
+            if os.path.exists(self.output_path):
+                os.remove(self.output_path)
+            self.download_failed.emit(str(e))
+
 
 class Installer(QWidget):
     # 新增信號，用於通知安裝完成
     installation_finished = pyqtSignal()
 
-    # 新增信號，用於更新進度條和速度
-    progress_updated = pyqtSignal(int, float, float)  # percent, bytes_received, speed
-
     def __init__(self):
         super().__init__()
-        self.setWindowIcon(QIcon("assets/icon.ico"))  # 設定視窗圖示
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
         self.cancel_flag = False  # 初始化取消標誌
-        self.timer = QTimer(self)  # 初始化 QTimer
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint)  # 禁用關閉按鈕
         self.initUI()
-
-        # 連接信號到槽
-        self.progress_updated.connect(self._update_progress_ui)
 
     def initUI(self):
         self.setWindowTitle('安裝資訊')
@@ -60,9 +92,16 @@ class Installer(QWidget):
 
         winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
 
-        reply = QMessageBox.question(self, '安裝資訊', 'FFmpeg 是影片下載器必要的元件。\n是否要下載並安裝？', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox(self)
+        reply.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))
+        reply.setWindowTitle('安裝資訊')
+        reply.setText('FFmpeg 是影片下載器必要的元件。\n是否要下載並安裝？')
+        reply.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply.setIcon(QMessageBox.Icon.Question)
+        reply.setWindowFlags(reply.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
+        user_reply = reply.exec()
 
-        if reply == QMessageBox.StandardButton.Yes:
+        if user_reply == QMessageBox.StandardButton.Yes:
             # 定義跟目錄為主程式所在的資料夾
             self.base_dir = os.path.dirname(os.path.abspath(__file__))
             self.ffmpeg_url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
@@ -77,8 +116,8 @@ class Installer(QWidget):
             info_layout.addWidget(self.speed_label)
             info_layout.addStretch()
             self.size_label = QLabel("0.00 MB / 0.00 MB")  # 只顯示數字
-            info_layout.addWidget(info_layout)
-            layout.addLayout(info_layout)
+            info_layout.addWidget(self.size_label)  # 修正此行，添加正確的 widget
+            layout.addLayout(info_layout)  # 添加 info_layout 到主佈局
 
             self.progress_bar = QProgressBar()
             self.progress_bar.setStyleSheet("""
@@ -111,85 +150,79 @@ class Installer(QWidget):
         self.setLayout(layout)
 
     def start_download(self):
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        self.future = self.executor.submit(
-            download_file,
+        # 獲取 FFmpeg 壓縮檔的大小
+        try:
+            response = requests.head(self.ffmpeg_url, timeout=10, allow_redirects=True)
+            response.raise_for_status()  # 檢查 HTTP 狀態碼
+            content_length = response.headers.get('content-length')
+            if content_length is None:
+                raise ValueError("無法獲取檔案大小")
+            self.ffmpeg_zip_size = int(content_length)  # 確保總大小正確顯示
+            self.size_label.setText(f"0.00 MB / {self.ffmpeg_zip_size / (1024 * 1024):.2f} MB")  # 初始化總大小
+        except requests.exceptions.RequestException as e:
+            show_message_box(self, '錯誤', f'連線錯誤：{e}', QMessageBox.Icon.Critical)
+            self.close()
+            return
+        except ValueError as e:
+            show_message_box(self, '錯誤', f'無法獲取檔案大小：{e}', QMessageBox.Icon.Critical)
+            self.close()
+            return
+
+        # 啟動下載執行緒
+        self.download_worker = DownloadWorker(
             self.ffmpeg_url,
             self.ffmpeg_zip,
-            self.update_progress,
             lambda: self.cancel_flag
         )
-        self.install_ffmpeg(self.future)
-
-    def update_progress(self, bytes_received, total_size, speed):
-        percent = int(bytes_received * 100 / total_size)
-        # 發射信號，將進度更新傳遞到主執行緒
-        self.progress_updated.emit(percent, bytes_received, speed)
+        self.download_worker.progress_updated.connect(self._update_progress_ui)
+        self.download_worker.download_finished.connect(self.on_download_finished)
+        self.download_worker.download_failed.connect(self.on_download_failed)
+        self.download_worker.start()
 
     def _update_progress_ui(self, percent, bytes_received, speed):
-        self.progress_bar.setValue(percent)  # 更新進度條
-        self.size_label.setText(f"{bytes_received / (1024 * 1024):.2f} MB / {self.progress_bar.maximum()} MB")  # 更新檔案進度
+        # 更新進度條
+        self.progress_bar.setValue(percent)
+        self.progress_bar.setFormat(f"{percent}%")  # 顯示百分比文字
+        # 更新已下載大小與總大小
+        self.size_label.setText(f"{bytes_received / (1024 * 1024):.2f} MB / {self.ffmpeg_zip_size / (1024 * 1024):.2f} MB")
+        # 更新下載速度
         if speed > 1024 * 1024:
-            self.speed_label.setText(f"速度：{speed / (1024 * 1024):.2f} MB/s")  # 顯示速度
+            self.speed_label.setText(f"速度：{speed / (1024 * 1024):.2f} MB/s")
         elif speed > 1024:
             self.speed_label.setText(f"速度：{speed / 1024:.2f} KB/s")
         else:
             self.speed_label.setText(f"速度：{speed:.2f} B/s")
 
-    def install_ffmpeg(self, future):
-        self.future = future  # 將 future 儲存為類別屬性
-        self.start_timer()  # 啟動定時器
+    def on_download_finished(self):
+        # 解壓縮並完成安裝
+        try:
+            with zipfile.ZipFile(self.ffmpeg_zip, 'r') as zip_ref:
+                zip_ref.extractall(self.ffmpeg_extract_dir)
+            os.remove(self.ffmpeg_zip)
+            winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
+            show_message_box(self, '安裝完成', 'FFmpeg 安裝完成，請重新啟動此程式。', QMessageBox.Icon.Information)
+            self.installation_finished.emit()
+            self.close()
+        except Exception as e:
+            show_message_box(self, '錯誤', f'解壓縮失敗：{e}', QMessageBox.Icon.Critical)
 
-    def start_timer(self):
-        self.timer.timeout.connect(self.check_future)
-        self.timer.start(100)  # 每100毫秒檢查一次
-
-    def check_future(self):
-        if self.future.done():
-            self.timer.stop()
-            try:
-                result = self.future.result()
-                if result is None and not self.cancel_flag:
-                    # 解壓縮到跟目錄
-                    with zipfile.ZipFile(self.ffmpeg_zip, 'r') as zip_ref:
-                        zip_ref.extractall(self.ffmpeg_extract_dir)
-                    os.remove(self.ffmpeg_zip)
-                    winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
-                    print("FFmpeg 安裝完成")  # 除錯訊息
-
-                    self.installation_finished.emit()
-                    self.close()
-
-                    # 顯示安裝完成的彈窗
-                    QMessageBox.information(self, '安裝完成', 'FFmpeg 安裝完成，請重新啟動此程式。', QMessageBox.StandardButton.Ok).setWindowFlags(
-                        Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Dialog)  # 設定警告視窗置頂
-                    sys.exit()
-                else:
-                    if self.cancel_flag:
-                        self.cleanup_partial_download()  # 刪除部分下載的文件
-                        sys.exit()
-            except Exception as e:
-                QMessageBox.critical(self, '錯誤', f'FFmpeg 安裝失敗：{e}', QMessageBox.StandardButton.Ok).setWindowFlags(
-                    Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Dialog)  # 設定警告視窗置頂
-                self.installation_finished.emit()  # 確保在發生錯誤時也發出信號
-                self.close()
+    def on_download_failed(self, error_message):
+        show_message_box(self, '錯誤', f'下載失敗：{error_message}', QMessageBox.Icon.Critical)
+        self.cleanup_partial_download()
 
     def cancel_download(self):
         self.cancel_flag = True
-        self.executor.shutdown(wait=True)
-        self.cleanup_partial_download()  # 刪除部分下載的文件
+        self.cleanup_partial_download()
         sys.exit()
 
     def cleanup_partial_download(self):
         # 刪除部分下載的文件
         try:
             if os.path.exists(self.ffmpeg_zip):
+                time.sleep(1)
                 os.remove(self.ffmpeg_zip)
-            if os.path.exists(self.ffmpeg_zip + ".part"):
-                os.remove(self.ffmpeg_zip + ".part")
-            print("已刪除部分下載的文件。")
         except Exception as e:
-            print(f"刪除部分下載的文件失敗：{e}")
+            pass
 
 
 class VideoInfoLoaderThread(QThread):
@@ -206,7 +239,7 @@ class VideoInfoLoaderThread(QThread):
                 info = ydl.extract_info(self.url, download=False)
                 self.video_info_loaded.emit(info)
         except Exception as e:
-            error_message = "找不到影片，請檢查是否輸入正確的網址"  # 修改錯誤訊息
+            error_message = "找不到影片，請檢查是否輸入正確的網址"
             self.error_occurred.emit(error_message)
 
 
@@ -214,6 +247,7 @@ class VideoDownloaderApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("oldfish 影片下載器")
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
         self.setFixedSize(400, 100)  # 調整視窗高度
 
         # 動態獲取圖示路徑
@@ -280,23 +314,11 @@ class VideoDownloaderApp(QMainWindow):
     def show_video_info(self):
         url = self.url_entry.text()
         if not url:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("警告")
-            msg_box.setText("請輸入影片網址！")
-            msg_box.setIcon(QMessageBox.Icon.Warning)
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
-            msg_box.exec()
+            show_message_box(self, "警告", "請輸入影片網址！", QMessageBox.Icon.Warning)
             return
 
         if "youtube.com/watch" not in url and "youtu.be/" not in url:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("警告")
-            msg_box.setText("請輸入有效的 YouTube 影片網址！")
-            msg_box.setIcon(QMessageBox.Icon.Warning)
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
-            msg_box.exec()
+            show_message_box(self, "警告", "請輸入有效的 YouTube 影片網址！", QMessageBox.Icon.Warning)
             return
 
         # 開啟影片資訊視窗
@@ -306,17 +328,7 @@ class VideoDownloaderApp(QMainWindow):
 
     def open_downloads_folder(self):
         # 使用自訂下載路徑
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        settings_file = os.path.join(base_dir, "settings.txt")
-
-        if os.path.exists(settings_file):
-            with open(settings_file, "r") as f:
-                for line in f:
-                    if line.startswith("download_path="):
-                        downloads_dir = line.split("=", 1)[1].strip()
-                        break
-        else:
-            downloads_dir = os.path.join(base_dir, "downloads")
+        downloads_dir = self.default_download_path
 
         if not os.path.exists(downloads_dir):
             os.makedirs(downloads_dir)
@@ -343,23 +355,14 @@ class DownloadThread(QThread):
         self.url = url
         self.ydl_opts = ydl_opts
 
-    def hook(self, d):
-        """處理下載進度更新的回調函數"""
-        if d["status"] == "downloading":
-            downloaded = d.get("downloaded_bytes", 0)
-            total = d.get("total_bytes", d.get("total_bytes_estimate", 1))
-            percent = int(downloaded / total * 100) if total > 0 else 0
-            self.progress.emit(percent)  # 發送進度百分比
-            self.status.emit(f"下載進度: {percent}%")  # 發送進度文字
-        elif d["status"] == "finished":
-            self.status.emit("下載完成，正在處理檔案...")
-
     def run(self):
         try:
+            print(f"開始下載：{self.url}")  # 除錯訊息
             with YoutubeDL(self.ydl_opts) as ydl:
                 ydl.add_default_info_extractors()
                 ydl.params['logger'] = self  # 使用自訂 logger
                 ydl.download([self.url])
+            print(f"下載完成：{self.url}")  # 除錯訊息
         except Exception as e:
             logging.error(f"下載失敗：{e}")
 
@@ -378,6 +381,7 @@ class DownloadThread(QThread):
 class VideoInfoDialog(QDialog):
     def __init__(self, url, parent=None, download_path=None):
         super().__init__(parent)
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
         self.setWindowTitle("影片資訊")
         self.setFixedSize(400, 250)  # 確保視窗大小正確
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
@@ -495,7 +499,6 @@ class VideoInfoDialog(QDialog):
             else:
                 self.thumbnail_label.setText("無法載入縮圖")
         except Exception as e:
-            logging.error(f"無法載入縮圖: {e}")
             self.thumbnail_label.setText("無法載入縮圖")
 
         # 隱藏載入中訊息，啟用解析度與副檔名選擇，顯示下載按鈕
@@ -514,13 +517,7 @@ class VideoInfoDialog(QDialog):
             return f"{minutes:02}:{seconds:02}"
 
     def on_load_error(self, error_message):
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("錯誤")
-        msg_box.setText(error_message)
-        msg_box.setIcon(QMessageBox.Icon.Warning)
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
-        msg_box.exec()
+        show_message_box(self, "錯誤", error_message, QMessageBox.Icon.Warning)
         self.close()
 
     def toggle_resolution_dropdown(self, extension):
@@ -533,15 +530,26 @@ class VideoInfoDialog(QDialog):
         extension = self.extension_dropdown.currentText().lower()
 
         # 根據設定決定檔名是否加上解析度
-        filename_template = f'%(title)s [{resolution}].%(ext)s' if self.append_resolution else f'%(title)s.%(ext)s'
+        if extension == 'mp3' or not self.append_resolution:
+            filename_template = f'%(title)s.%(ext)s'
+        else:
+            filename_template = f'%(title)s [{resolution}].%(ext)s'
 
         # 設定下載選項
         ydl_opts = {
-            'format': f'bestvideo[height<={resolution[:-1]}]+bestaudio/best',
+            'format': 'bestaudio/best',  # 僅下載音訊
             'outtmpl': os.path.join(self.download_path, filename_template),  # 使用正確的下載路徑
             'progress_hooks': [self.update_progress],  # 新增進度更新的 hook
-            'postprocessors': [{'key': 'FFmpegVideoConvertor', 'preferedformat': extension}] if extension == 'mp3' else [],
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'audio-format': extension, 'ext': extension}],
+            'nocheckcertificate': True,  # 避免 SSL 憑證錯誤
+            'file_access_denied_retries': 3,  # 處理檔案存取問題
+            'no_date': True,  # 避免設定檔案修改日期
         }
+
+        # 禁用按鈕
+        self.download_button.setEnabled(False)
+        self.resolution_dropdown.setEnabled(False)
+        self.extension_dropdown.setEnabled(False)
 
         # 顯示進度條並調整視窗高度
         self.status_label.setText("下載中...")
@@ -559,25 +567,13 @@ class VideoInfoDialog(QDialog):
         self.download_thread.start()
 
     def update_progress(self, d):
-        # 更新進度條
-        if d['status'] == 'downloading':
-            percent_str = d.get('_percent_str', '').strip()
-            try:
-                # 移除多餘空白並檢查格式
-                percent_str = percent_str.replace(' ', '').replace('%', '')  # 移除空白和百分比符號
-                if percent_str.replace('.', '', 1).isdigit():  # 確保字串是有效數字
-                    percent = float(percent_str)
-                    percent = max(0, min(100, percent))  # 確保百分比在有效範圍內
-                    self.progress_bar.setValue(int(percent))  # 設定進度條的值
-                else:
-                    raise ValueError(f"無效的百分比格式：{percent_str}")
-            except ValueError as e:
-                logging.error(f"無法解析進度百分比：{e}")
+        # 下載過程中不更新進度條
+        pass
 
     def on_already_downloaded(self):
         # 已下載過的處理
         self.already_downloaded_flag = True  # 設置標誌為 True
-        QMessageBox.information(self, "提示", "此影片已下載過！", QMessageBox.StandardButton.Ok)
+        show_message_box(self, "提示", "此影片已下載過！", QMessageBox.Icon.Information)
         self.progress_bar.hide()
         self.status_label.hide()
         self.setFixedHeight(self.original_height)  # 恢復視窗高度
@@ -586,18 +582,25 @@ class VideoInfoDialog(QDialog):
         # 下載完成後的處理
         if self.already_downloaded_flag:  # 若已下載過，直接返回
             return
+        self.progress_bar.setValue(100)  # 下載完成後設定為 100%
         self.status_label.setText("下載完成！")
-        QMessageBox.information(self, "完成", "影片下載完成！", QMessageBox.StandardButton.Ok)
+        show_message_box(self, "完成", "影片下載完成！", QMessageBox.Icon.Information)
         self.progress_bar.hide()
         self.status_label.hide()
         self.setFixedHeight(self.original_height)  # 恢復視窗高度為原始值
         self.close()  # 自動關閉影片資訊視窗
         self.parentWidget().setVisible(True)  # 回到主視窗，修正為正確的顯示方法
 
+        # 啟用按鈕
+        self.download_button.setEnabled(True)
+        self.resolution_dropdown.setEnabled(True)
+        self.extension_dropdown.setEnabled(True)
+
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
         self.setWindowTitle("設定")
         self.setFixedSize(450, 200)  # 調整頁面大小
 
@@ -700,7 +703,6 @@ class SettingsDialog(QDialog):
             with open(self.settings_file, "w") as f:
                 f.write(f"download_path={download_path}\n")
                 f.write(f"append_resolution={append_resolution}\n")  # 儲存設定
-            print(f"下載路徑已保存: {download_path}, 加上解析度: {append_resolution}")
         self.accept()
 
     def load_settings(self):
@@ -740,14 +742,10 @@ if __name__ == "__main__":
 
     # 檢查 FFmpeg 是否已安裝
     if not os.path.isfile(ffmpeg_path):  # 使用 os.path.isfile 確保檔案存在且為檔案
-        print(f"未偵測到 FFmpeg，檢查的路徑為: {ffmpeg_path}")  # 顯示檢查的路徑
-        if not os.path.exists(os.path.dirname(ffmpeg_path)):
-            print(f"目錄不存在: {os.path.dirname(ffmpeg_path)}")  # 顯示目錄不存在的訊息
         installer = Installer()
         installer.installation_finished.connect(lambda: print("安裝完成"))
         installer.show()
     else:
-        print("已偵測到 FFmpeg，路徑為:", os.path.abspath(ffmpeg_path))  # 在終端顯示訊息
         # 確保 FFmpeg 路徑被添加到環境變數
         os.environ["PATH"] += os.pathsep + os.path.abspath(os.path.dirname(ffmpeg_path))
         window = VideoDownloaderApp()
