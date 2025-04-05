@@ -15,8 +15,8 @@ import time
 # 設定日誌
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def show_message_box(parent, title, text, icon=QMessageBox.Icon.Information):
-    """通用的訊息框，套用 icon.ico，並在按下 OK 時關閉父視窗"""
+def show_message_box(parent, title, text, icon=QMessageBox.Icon.Information, close_parent=False):
+    """通用的訊息框，套用 icon.ico，並根據參數決定是否關閉父視窗"""
     msg_box = QMessageBox(parent)
     msg_box.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))
     msg_box.setWindowTitle(title)
@@ -24,8 +24,8 @@ def show_message_box(parent, title, text, icon=QMessageBox.Icon.Information):
     msg_box.setIcon(icon)
     msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
     msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
-    if msg_box.exec() == QMessageBox.StandardButton.Ok:
-        parent.close()  # 按下 OK 時關閉父視窗
+    if msg_box.exec() == QMessageBox.StandardButton.Ok and close_parent:
+        parent.close()  # 按下 OK 時關閉父視窗（僅當 close_parent 為 True 時）
 
 class DownloadWorker(QThread):
     progress_updated = pyqtSignal(int, float, float)  # percent, bytes_received, speed
@@ -304,8 +304,8 @@ class VideoDownloaderApp(QMainWindow):
         self.setCentralWidget(container)
 
     def load_default_download_path(self):
-        # 從設定檔中加載下載路徑，若不存在則使用預設值
-        settings_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.txt")
+        """從設定檔中加載下載路徑，若不存在則使用預設值"""
+        settings_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.txt")  # 確保路徑正確
         if os.path.exists(settings_file):
             try:
                 with open(settings_file, "r", encoding="utf-8") as f:  # 使用 UTF-8 編碼讀取
@@ -315,16 +315,16 @@ class VideoDownloaderApp(QMainWindow):
             except UnicodeDecodeError as e:
                 logging.error(f"讀取設定檔時發生編碼錯誤：{e}")
                 QMessageBox.critical(self, "錯誤", "讀取設定檔失敗，請檢查檔案編碼是否為 UTF-8。")
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")  # 預設下載路徑
 
     def show_video_info(self):
         url = self.url_entry.text()
-        if (not url):
-            show_message_box(self, "警告", "請輸入影片網址！", QMessageBox.Icon.Warning)
+        if not url:
+            show_message_box(self, "警告", "請輸入影片網址！", QMessageBox.Icon.Warning, close_parent=False)
             return
 
-        if ("youtube.com/watch" not in url and "youtu.be/" not in url):
-            show_message_box(self, "警告", "請輸入有效的 YouTube 影片網址！", QMessageBox.Icon.Warning)
+        if "youtube.com/watch" not in url and "youtu.be/" not in url and "youtube.com/shorts" not in url:
+            show_message_box(self, "警告", "請輸入有效的 YouTube 影片網址或 Shorts 網址！", QMessageBox.Icon.Warning, close_parent=False)
             return
 
         # 開啟影片資訊視窗
@@ -425,7 +425,6 @@ class VideoInfoDialog(QDialog):
 
         # 解析度與副檔名選擇
         self.resolution_dropdown = QComboBox()
-        self.resolution_dropdown.addItems(["1080p", "720p", "480p", "360p"])
         self.resolution_dropdown.setEnabled(False)  # 載入完成前禁用
         self.extension_dropdown = QComboBox()
         self.extension_dropdown.addItems(["MP4", "MP3"])
@@ -507,11 +506,51 @@ class VideoInfoDialog(QDialog):
         except Exception as e:
             self.thumbnail_label.setText("無法載入縮圖")
 
+        # 動態更新解析度選單
+        available_resolutions = self.get_available_resolutions(info)
+        self.resolution_dropdown.clear()
+        self.resolution_dropdown.addItems(available_resolutions)
+        self.resolution_dropdown.setCurrentText("1080p" if "1080p" in available_resolutions else available_resolutions[0])
+        self.resolution_dropdown.setEnabled(True)
+
         # 隱藏載入中訊息，啟用解析度與副檔名選擇，顯示下載按鈕
         self.loading_label.hide()
-        self.resolution_dropdown.setEnabled(True)
         self.extension_dropdown.setEnabled(True)
         self.download_button.setEnabled(True)
+
+    def get_available_resolutions(self, info):
+        """從影片資訊中提取可用的解析度清單，並映射到常見解析度名稱"""
+        formats = info.get('formats', [])
+        resolutions = set()
+        resolution_map = {
+            2160: "2160p (4K)",
+            1440: "1440p (2K)",
+            1080: "1080p",
+            720: "720p",
+            480: "480p",
+            360: "360p",
+            240: "240p",
+            144: "144p"
+        }
+
+        for fmt in formats:
+            if fmt.get('vcodec') != 'none':  # 確保是影片格式
+                height = fmt.get('height')
+                width = fmt.get('width')
+                if height and width:
+                    aspect_ratio = round(width / height, 2)  # 計算寬高比
+                    # 處理常見寬高比
+                    if aspect_ratio in [1.33, 1.34]:  # 4:3
+                        resolution_name = resolution_map.get(height, f"{height}p (4:3)")
+                    elif aspect_ratio == 1.78:  # 16:9
+                        resolution_name = resolution_map.get(height, f"{height}p")
+                    elif aspect_ratio in [0.56, 0.56]:  # 9:16
+                        resolution_name = resolution_map.get(height, f"{width}p (9:16)")
+                    else:
+                        resolution_name = f"{width}x{height} (Custom)"
+                    resolutions.add(resolution_name)
+
+        return sorted(resolutions, key=lambda x: int(x.split("p")[0].split("x")[0]), reverse=True)  # 按解析度從高到低排序
 
     def format_duration(self, seconds):
         # 格式化片長為 HH:MM:SS
@@ -532,7 +571,7 @@ class VideoInfoDialog(QDialog):
 
     def download_video(self):
         # 獲取用戶選擇的解析度和格式
-        resolution = self.resolution_dropdown.currentText()
+        resolution = self.resolution_dropdown.currentText().split(" ")[0]  # 取得解析度數值部分
         extension = self.extension_dropdown.currentText().lower()
 
         # 根據設定檔決定檔名格式
@@ -544,9 +583,12 @@ class VideoInfoDialog(QDialog):
             else:
                 filename_template = f'%(title)s.%(ext)s'
 
+        # 動態生成格式選項，確保解析度限制和回退機制
+        format_string = self.generate_format_string(resolution, extension)
+
         # 設定下載選項
         ydl_opts = {
-            'format': 'bestaudio/best' if extension == 'mp3' else f'bestvideo[height<={resolution[:-1]}]+bestaudio/best',
+            'format': format_string,
             'outtmpl': os.path.join(self.download_path, filename_template),  # 使用正確的下載路徑
             'progress_hooks': [self.update_progress],  # 新增進度更新的 hook
             'postprocessors': [
@@ -559,6 +601,8 @@ class VideoInfoDialog(QDialog):
             'nocheckcertificate': True,  # 避免 SSL 憑證錯誤
             'file_access_denied_retries': 3,  # 處理檔案存取問題
             'no_date': True,  # 避免設定檔案修改日期
+            'merge_output_format': extension if extension != 'mp3' else None,  # 確保合併輸出格式正確
+            'postprocessor_args': ['-strict', '-2'],  # 確保兼容性
         }
 
         # 禁用按鈕
@@ -580,6 +624,55 @@ class VideoInfoDialog(QDialog):
         self.download_thread.already_downloaded.connect(self.on_already_downloaded)  # 連接信號
         self.download_thread.finished.connect(self.on_download_finished)
         self.download_thread.start()
+
+    def generate_format_string(self, resolution, extension):
+        """生成格式選項，根據影片比例使用正確的解析度定義方式"""
+        aspect_ratio = self.get_aspect_ratio()  # 獲取影片的寬高比
+        if aspect_ratio == "9:16":
+            # 使用寬度限制解析度
+            width = resolution[:-1] if resolution.endswith("p") else resolution
+            base_format = f'bestvideo[width<={width}][ext=mp4]+bestaudio[ext=m4a]/best[width<={width}][ext=mp4]'
+            fallback_format = f'/bestvideo[width<={width}]+bestaudio/best[width<={width}]'
+        elif aspect_ratio in ["16:9", "4:3"]:
+            # 使用高度限制解析度
+            height = resolution[:-1] if resolution.endswith("p") else resolution
+            base_format = f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]'
+            fallback_format = f'/bestvideo[height<={height}]+bestaudio/best[height<={height}]'
+        else:
+            # 自訂寬高比處理
+            base_format, fallback_format = self.handle_custom_aspect_ratio(resolution)
+        return base_format + fallback_format
+
+    def handle_custom_aspect_ratio(self, resolution):
+        """處理自訂寬高比影片的格式選項"""
+        if "x" in resolution:
+            width, height = resolution.split("x")
+            base_format = f'bestvideo[width<={width}][height<={height}][ext=mp4]+bestaudio[ext=m4a]'
+            fallback_format = f'/bestvideo[width<={width}][height<={height}]+bestaudio'
+        else:
+            raise ValueError("無效的解析度格式，請使用 '寬x高' 格式，例如 '256x144'")
+        return base_format, fallback_format
+
+    def get_aspect_ratio(self):
+        """判斷影片的寬高比"""
+        with YoutubeDL({'quiet': True}) as ydl:
+            info = ydl.extract_info(self.url, download=False)
+            formats = info.get('formats', [])
+            for fmt in formats:
+                if fmt.get('vcodec') != 'none':  # 確保是影片格式
+                    width = fmt.get('width')
+                    height = fmt.get('height')
+                    if width and height:
+                        ratio = round(width / height, 2)
+                        if ratio in [0.56, 0.57]:  # 9:16
+                            return "9:16"
+                        elif ratio in [1.77, 1.78]:  # 16:9
+                            return "16:9"
+                        elif ratio in [1.33, 1.34]:  # 4:3
+                            return "4:3"
+                        else:
+                            return "custom"  # 自訂寬高比
+        return "16:9"  # 預設為 16:9
 
     def update_progress(self, d):
         # 下載過程中不更新進度條
@@ -670,7 +763,7 @@ class SettingsDialog(QDialog):
         about_layout = QVBoxLayout()
         title_label = QLabel("oldfish Video Downloader")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")  # 放大字體
-        version_label = QLabel("應用程式版本: 0.3.0")
+        version_label = QLabel("應用程式版本: 1.0.0-beta1")
         author_label = QLabel("作者: 老魚oldfish")
         link_label = QLabel('<a href="https://github.com/oldfish101240/oldfish-Video-Downloader">前往GitHub頁面</a>')
         link_label.setOpenExternalLinks(True)  # 啟用外部連結
@@ -723,14 +816,16 @@ class SettingsDialog(QDialog):
         self.set_path_with_ellipsis(self.default_download_path)
 
     def save_settings(self):
+        """儲存設定到設定檔"""
+        settings_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.txt")  # 確保路徑正確
         download_path = self.download_path_entry.toolTip()  # 使用完整路徑
         append_resolution = self.append_resolution_checkbox.isChecked()
         if download_path:
             try:
                 # 確保目錄存在
-                os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
+                os.makedirs(os.path.dirname(settings_file), exist_ok=True)
                 # 強制覆寫設定檔，使用 UTF-8 編碼
-                with open(self.settings_file, "w", encoding="utf-8") as f:
+                with open(settings_file, "w", encoding="utf-8") as f:
                     f.write(f"download_path={download_path}\n")
                     f.write(f"append_resolution={append_resolution}\n")  # 儲存設定
                 print("設定已成功儲存！")  # 在終端顯示成功訊息
@@ -743,10 +838,11 @@ class SettingsDialog(QDialog):
         self.accept()
 
     def load_settings(self):
-        if os.path.exists(self.settings_file):
+        """從設定檔中載入設定"""
+        settings_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.txt")  # 確保路徑正確
+        if os.path.exists(settings_file):
             try:
-                # 使用 UTF-8 編碼讀取設定檔
-                with open(self.settings_file, "r", encoding="utf-8") as f:
+                with open(settings_file, "r", encoding="utf-8") as f:  # 使用 UTF-8 編碼讀取
                     for line in f:
                         if line.startswith("download_path="):
                             self.set_path_with_ellipsis(line.split("=", 1)[1].strip())
@@ -808,10 +904,23 @@ if __name__ == "__main__":
 
     # 定義跟目錄為主程式所在的資料夾
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    settings_file = os.path.join(base_dir, "settings.txt")
     ffmpeg_path = os.path.join(base_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
 
+    # 檢查 settings.txt 是否存在，若不存在則自動生成
+    if not os.path.exists(settings_file):
+        try:
+            with open(settings_file, "w", encoding="utf-8") as f:
+                f.write(f"download_path={os.path.join(base_dir, 'downloads')}\n")
+                f.write("append_resolution=False\n")
+            print("未找到 settings.txt，已自動生成預設設定檔。")
+        except Exception as e:
+            print(f"無法生成 settings.txt：{e}")
+    else:
+        print("成功讀取 settings.txt。")
+
     # 檢查 FFmpeg 是否已安裝
-    if (not os.path.isfile(ffmpeg_path)):  # 使用 os.path.isfile 確保檔案存在且為檔案
+    if not os.path.isfile(ffmpeg_path):  # 使用 os.path.isfile 確保檔案存在且為檔案
         installer = Installer()
         installer.installation_finished.connect(lambda: print("安裝完成"))
         installer.show()
