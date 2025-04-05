@@ -40,38 +40,58 @@ class DownloadWorker(QThread):
         self.last_update_time = 0  # 用於控制更新頻率
 
     def run(self):
-        try:
-            response = requests.get(self.url, stream=True, timeout=10)
-            total_size = int(response.headers.get('content-length', 0))
-            bytes_received = 0
-            start_time = time.time()
+        max_retries = 3  # 最大重試次數
+        retry_count = 0
 
-            with open(self.output_path, 'wb') as file:
-                for chunk in response.iter_content(chunk_size=1024):
-                    if self.cancel_callback():
-                        # 刪除部分下載的檔案
-                        file.close()  # 確保檔案已關閉
-                        if os.path.exists(self.output_path):
-                            os.remove(self.output_path)
-                        return
-                    file.write(chunk)
-                    bytes_received += len(chunk)
-                    elapsed_time = time.time() - start_time
-                    speed = bytes_received / elapsed_time if elapsed_time > 0 else 0
-                    percent = int(bytes_received * 100 / total_size) if total_size > 0 else 0
+        while retry_count < max_retries:
+            try:
+                response = requests.get(self.url, stream=True, timeout=10)
+                total_size = int(response.headers.get('content-length', 0))
+                bytes_received = 0
+                start_time = time.time()
 
-                    # 每秒更新一次進度
-                    current_time = time.time()
-                    if current_time - self.last_update_time >= 1:
-                        self.progress_updated.emit(percent, bytes_received, speed)
-                        self.last_update_time = current_time
+                with open(self.output_path, 'wb') as file:
+                    for chunk in response.iter_content(chunk_size=1024):
+                        if self.cancel_callback():
+                            # 刪除部分下載的檔案
+                            file.close()  # 確保檔案已關閉
+                            if os.path.exists(self.output_path):
+                                os.remove(self.output_path)
+                            return
+                        file.write(chunk)
+                        bytes_received += len(chunk)
+                        elapsed_time = time.time() - start_time
+                        speed = bytes_received / elapsed_time if elapsed_time > 0 else 0
+                        percent = int(bytes_received * 100 / total_size) if total_size > 0 else 0
 
-            self.download_finished.emit()
-        except Exception as e:
-            # 刪除部分下載的檔案
-            if os.path.exists(self.output_path):
-                os.remove(self.output_path)
-            self.download_failed.emit(str(e))
+                        # 每秒更新一次進度
+                        current_time = time.time()
+                        if current_time - self.last_update_time >= 1:
+                            self.progress_updated.emit(percent, bytes_received, speed)
+                            self.last_update_time = current_time
+
+                self.download_finished.emit()
+                return  # 成功下載後退出
+            except requests.exceptions.RequestException as e:
+                retry_count += 1
+                logging.warning(f"下載失敗，正在重試 ({retry_count}/{max_retries})：{e}")
+                time.sleep(2)  # 等待 2 秒後重試
+
+        # 如果達到最大重試次數仍失敗
+        if os.path.exists(self.output_path):
+            os.remove(self.output_path)
+        self.download_failed.emit("下載失敗：伺服器超時或其他錯誤")
+        self._notify_user_and_exit()
+
+    def _notify_user_and_exit(self):
+        """提醒用戶重新啟動程式，並結束程式"""
+        QMessageBox.critical(
+            None,
+            "下載失敗",
+            "伺服器超時或其他錯誤，請重新啟動程式。",
+            QMessageBox.StandardButton.Ok
+        )
+        sys.exit()
 
 
 class Installer(QWidget):
@@ -80,7 +100,16 @@ class Installer(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
+        # 使用主程式的 base_dir，確保資源目錄正確
+        if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
+            self.base_dir = os.path.dirname(sys.executable)  # .exe 檔案所在目錄
+        else:
+            self.base_dir = os.path.dirname(os.path.abspath(__file__))  # 原始腳本所在目錄
+
+        self.assets_dir = os.path.join(self.base_dir, "assets")  # 確保 assets 資料夾路徑正確
+        print(f"資源目錄 (assets_dir)：{self.assets_dir}")
+
+        self.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 套用 icon.ico
         self.cancel_flag = False  # 初始化取消標誌
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint)  # 禁用關閉按鈕
@@ -94,7 +123,7 @@ class Installer(QWidget):
         winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
 
         reply = QMessageBox(self)
-        reply.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))
+        reply.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))
         reply.setWindowTitle('安裝資訊')
         reply.setText('FFmpeg 是影片下載器必要的元件。\n是否要下載並安裝？')
         reply.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -104,10 +133,11 @@ class Installer(QWidget):
 
         if (user_reply == QMessageBox.StandardButton.Yes):
             # 定義跟目錄為主程式所在的資料夾
-            self.base_dir = os.path.dirname(os.path.abspath(__file__))
             self.ffmpeg_url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-            self.ffmpeg_zip = os.path.join(self.base_dir, "ffmpeg.zip")  # 壓縮檔下載到跟目錄
+            self.ffmpeg_zip = os.path.join(self.base_dir, "ffmpeg.zip")  # 壓縮檔下載到基底目錄
             self.ffmpeg_extract_dir = os.path.join(self.base_dir, "ffmpeg-7.1.1-essentials_build")  # 解壓縮目錄
+            print(f"FFmpeg 壓縮檔將下載到：{self.ffmpeg_zip}")
+            print(f"FFmpeg 將解壓縮到：{self.ffmpeg_extract_dir}")
             self.progress_label = QLabel("安裝中...")
             layout.addWidget(self.progress_label)
 
@@ -247,16 +277,24 @@ class VideoInfoLoaderThread(QThread):
 class VideoDownloaderApp(QMainWindow):
     def __init__(self):
         super().__init__()
+        # 使用主程式的 base_dir，確保資源目錄正確
+        if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
+            self.base_dir = os.path.dirname(sys.executable)  # .exe 檔案所在目錄
+        else:
+            self.base_dir = os.path.dirname(os.path.abspath(__file__))  # 原始腳本所在目錄
+
+        self.assets_dir = os.path.join(self.base_dir, "assets")  # 確保 assets 資料夾路徑正確
+        print(f"資源目錄 (assets_dir)：{self.assets_dir}")
+
         self.setWindowTitle("oldfish 影片下載器")
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
+        self.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 套用 icon.ico
         self.setFixedSize(400, 100)  # 調整視窗高度
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)  # 取消置頂
 
         # 動態獲取圖示路徑
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(base_dir, "assets", "icon.ico")
-        settings_icon_path = os.path.join(base_dir, "assets", "settings_icon.png")
-        folder_icon_path = os.path.join(base_dir, "assets", "folder_icon.png")  # 資料夾圖案
+        icon_path = os.path.join(self.assets_dir, "icon.ico")
+        settings_icon_path = os.path.join(self.assets_dir, "settings_icon.png")
+        folder_icon_path = os.path.join(self.assets_dir, "folder_icon.png")  # 資料夾圖案
 
         # 設定視窗圖示
         self.setWindowIcon(QIcon(icon_path))
@@ -902,8 +940,14 @@ class SettingsDialog(QDialog):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    # 定義跟目錄為主程式所在的資料夾
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    # 定義 base_dir 為主程式所在的資料夾（支援打包後的 .exe）
+    if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
+        base_dir = os.path.dirname(sys.executable)  # .exe 檔案所在目錄
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))  # 原始腳本所在目錄
+
+    print(f"程式基底目錄 (base_dir)：{base_dir}")
+
     settings_file = os.path.join(base_dir, "settings.txt")
     ffmpeg_path = os.path.join(base_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
 
@@ -920,11 +964,15 @@ if __name__ == "__main__":
         print("成功讀取 settings.txt。")
 
     # 檢查 FFmpeg 是否已安裝
+    print(f"正在檢查 FFmpeg 是否存在於路徑：{ffmpeg_path}")
     if not os.path.isfile(ffmpeg_path):  # 使用 os.path.isfile 確保檔案存在且為檔案
+        print("FFmpeg 未安裝，將開始安裝。")
+        print(f"FFmpeg 將安裝於：{os.path.dirname(ffmpeg_path)}")
         installer = Installer()
         installer.installation_finished.connect(lambda: print("安裝完成"))
         installer.show()
     else:
+        print("FFmpeg 已安裝，無需重新安裝。")
         # 確保 FFmpeg 路徑被添加到環境變數
         os.environ["PATH"] += os.pathsep + os.path.abspath(os.path.dirname(ffmpeg_path))
         window = VideoDownloaderApp()
