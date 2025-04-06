@@ -15,10 +15,17 @@ import time
 # 設定日誌
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
+def get_assets_dir():
+    """取得 assets 資料夾的路徑，支援 exe 環境"""
+    if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
+        return os.path.join(os.path.dirname(sys.executable), "assets")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+
 def show_message_box(parent, title, text, icon=QMessageBox.Icon.Information, close_parent=False):
     """通用的訊息框，套用 icon.ico，並根據參數決定是否關閉父視窗"""
+    assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
     msg_box = QMessageBox(parent)
-    msg_box.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))
+    msg_box.setWindowIcon(QIcon(os.path.join(assets_dir, "icon.ico")))  # 使用 icon.ico
     msg_box.setWindowTitle(title)
     msg_box.setText(text)
     msg_box.setIcon(icon)
@@ -85,12 +92,14 @@ class DownloadWorker(QThread):
 
     def _notify_user_and_exit(self):
         """提醒用戶重新啟動程式，並結束程式"""
-        QMessageBox.critical(
-            None,
-            "下載失敗",
-            "伺服器超時或其他錯誤，請重新啟動程式。",
-            QMessageBox.StandardButton.Ok
-        )
+        assets_dir = get_assets_dir()
+        msg_box = QMessageBox()
+        msg_box.setWindowIcon(QIcon(os.path.join(assets_dir, "icon.ico")))  # 使用 icon.ico
+        msg_box.setIcon(QMessageBox.Icon.Critical)
+        msg_box.setWindowTitle("下載失敗")
+        msg_box.setText("伺服器超時或其他錯誤，請重新啟動程式。")
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
         sys.exit()
 
 
@@ -100,15 +109,7 @@ class Installer(QWidget):
 
     def __init__(self):
         super().__init__()
-        # 使用主程式的 base_dir，確保資源目錄正確
-        if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
-            self.base_dir = os.path.dirname(sys.executable)  # .exe 檔案所在目錄
-        else:
-            self.base_dir = os.path.dirname(os.path.abspath(__file__))  # 原始腳本所在目錄
-
-        self.assets_dir = os.path.join(self.base_dir, "assets")  # 確保 assets 資料夾路徑正確
-        print(f"資源目錄 (assets_dir)：{self.assets_dir}")
-
+        self.assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
         self.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 套用 icon.ico
         self.cancel_flag = False  # 初始化取消標誌
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
@@ -123,7 +124,7 @@ class Installer(QWidget):
         winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
 
         reply = QMessageBox(self)
-        reply.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))
+        reply.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 使用 icon.ico
         reply.setWindowTitle('安裝資訊')
         reply.setText('FFmpeg 是影片下載器必要的元件。\n是否要下載並安裝？')
         reply.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -277,15 +278,7 @@ class VideoInfoLoaderThread(QThread):
 class VideoDownloaderApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        # 使用主程式的 base_dir，確保資源目錄正確
-        if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
-            self.base_dir = os.path.dirname(sys.executable)  # .exe 檔案所在目錄
-        else:
-            self.base_dir = os.path.dirname(os.path.abspath(__file__))  # 原始腳本所在目錄
-
-        self.assets_dir = os.path.join(self.base_dir, "assets")  # 確保 assets 資料夾路徑正確
-        print(f"資源目錄 (assets_dir)：{self.assets_dir}")
-
+        self.assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
         self.setWindowTitle("oldfish 影片下載器")
         self.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 套用 icon.ico
         self.setFixedSize(400, 100)  # 調整視窗高度
@@ -352,7 +345,7 @@ class VideoDownloaderApp(QMainWindow):
                             return line.split("=", 1)[1].strip()
             except UnicodeDecodeError as e:
                 logging.error(f"讀取設定檔時發生編碼錯誤：{e}")
-                QMessageBox.critical(self, "錯誤", "讀取設定檔失敗，請檢查檔案編碼是否為 UTF-8。")
+                show_message_box(self, "錯誤", "讀取設定檔失敗，請檢查檔案編碼是否為 UTF-8。", QMessageBox.Icon.Critical)
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")  # 預設下載路徑
 
     def show_video_info(self):
@@ -425,7 +418,7 @@ class DownloadThread(QThread):
 class VideoInfoDialog(QDialog):
     def __init__(self, url, parent=None, download_path=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 使用 icon.ico
         self.setWindowTitle("影片資訊")
         self.setFixedSize(400, 250)  # 確保視窗大小正確
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)  # 取消置頂
@@ -755,7 +748,8 @@ class VideoInfoDialog(QDialog):
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 套用 icon.ico
+        self.assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
+        self.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 使用 icon.ico
         self.setWindowTitle("設定")
         self.setFixedSize(450, 200)  # 調整頁面大小
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)  # 取消置頂
@@ -868,9 +862,10 @@ class SettingsDialog(QDialog):
                     f.write(f"append_resolution={append_resolution}\n")  # 儲存設定
                 print("設定已成功儲存！")  # 在終端顯示成功訊息
                 self.save_original_settings()  # 更新初始設定值
+                show_message_box(self, "成功", "設定已成功儲存！", QMessageBox.Icon.Information)
             except Exception as e:
                 logging.error(f"儲存設定失敗：{e}")  # 在終端記錄錯誤
-                QMessageBox.critical(self, "錯誤", f"無法儲存設定：{e}")  # 顯示錯誤訊息
+                show_message_box(self, "錯誤", f"無法儲存設定：{e}", QMessageBox.Icon.Critical)
         else:
             QMessageBox.warning(self, "警告", "下載路徑無效，請重新選擇！")  # 顯示警告訊息
         self.accept()
@@ -888,7 +883,7 @@ class SettingsDialog(QDialog):
                             self.append_resolution_checkbox.setChecked(line.split("=", 1)[1].strip() == "True")
             except UnicodeDecodeError as e:
                 logging.error(f"讀取設定檔時發生編碼錯誤：{e}")
-                QMessageBox.critical(self, "錯誤", "讀取設定檔失敗，請檢查檔案編碼是否為 UTF-8。")
+                show_message_box(self, "錯誤", "讀取設定檔失敗，請檢查檔案編碼是否為 UTF-8。", QMessageBox.Icon.Critical)
         else:
             self.set_path_with_ellipsis(self.default_download_path)
 
@@ -932,6 +927,7 @@ class SettingsDialog(QDialog):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
+            reply.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 使用 icon.ico
             if reply == QMessageBox.StandardButton.Yes:
                 return  # 停留在設定視窗，讓用戶返回儲存
         super().reject()  # 關閉視窗
@@ -976,6 +972,7 @@ if __name__ == "__main__":
         # 確保 FFmpeg 路徑被添加到環境變數
         os.environ["PATH"] += os.pathsep + os.path.abspath(os.path.dirname(ffmpeg_path))
         window = VideoDownloaderApp()
+        window.setWindowIcon(QIcon(os.path.join(base_dir, "assets", "icon.ico")))  # 使用 icon.ico
         window.show()
 
     sys.exit(app.exec())
