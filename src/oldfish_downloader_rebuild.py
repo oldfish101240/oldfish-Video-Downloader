@@ -109,6 +109,12 @@ class Installer(QWidget):
 
     def __init__(self):
         super().__init__()
+        # 初始化 base_dir，確保在 exe 和非 exe 環境中都能正確取得主程式目錄
+        if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
+            self.base_dir = os.path.dirname(sys.executable)  # .exe 檔案所在目錄
+        else:
+            self.base_dir = os.path.dirname(os.path.abspath(__file__))  # 原始腳本所在目錄
+
         self.assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
         self.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 套用 icon.ico
         self.cancel_flag = False  # 初始化取消標誌
@@ -336,17 +342,26 @@ class VideoDownloaderApp(QMainWindow):
 
     def load_default_download_path(self):
         """從設定檔中加載下載路徑，若不存在則使用預設值"""
-        settings_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.txt")  # 確保路徑正確
+        if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
+            base_dir = os.path.dirname(sys.executable)  # .exe 檔案所在目錄
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))  # 原始腳本所在目錄
+
+        settings_file = os.path.join(base_dir, "settings.txt")  # 確保路徑正確
         if os.path.exists(settings_file):
             try:
                 with open(settings_file, "r", encoding="utf-8") as f:  # 使用 UTF-8 編碼讀取
                     for line in f:
                         if line.startswith("download_path="):
-                            return line.split("=", 1)[1].strip()
+                            download_path = line.split("=", 1)[1].strip()
+                            if os.path.exists(download_path):  # 確保路徑有效
+                                return download_path
+                            else:
+                                logging.warning(f"設定檔中的下載路徑無效：{download_path}，將使用預設路徑。")
             except UnicodeDecodeError as e:
                 logging.error(f"讀取設定檔時發生編碼錯誤：{e}")
                 show_message_box(self, "錯誤", "讀取設定檔失敗，請檢查檔案編碼是否為 UTF-8。", QMessageBox.Icon.Critical)
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")  # 預設下載路徑
+        return os.path.join(base_dir, "downloads")  # 預設下載路徑
 
     def show_video_info(self):
         url = self.url_entry.text()
@@ -364,10 +379,10 @@ class VideoDownloaderApp(QMainWindow):
         self.video_info_window.show()
 
     def open_downloads_folder(self):
-        # 使用自訂下載路徑
+        """開啟下載資料夾"""
         downloads_dir = self.default_download_path
 
-        if (not os.path.exists(downloads_dir)):
+        if not os.path.exists(downloads_dir):
             os.makedirs(downloads_dir)
         os.startfile(downloads_dir)
 
@@ -418,7 +433,8 @@ class DownloadThread(QThread):
 class VideoInfoDialog(QDialog):
     def __init__(self, url, parent=None, download_path=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")))  # 使用 icon.ico
+        self.assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
+        self.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 使用 icon.ico
         self.setWindowTitle("影片資訊")
         self.setFixedSize(400, 250)  # 確保視窗大小正確
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)  # 取消置頂
@@ -862,7 +878,6 @@ class SettingsDialog(QDialog):
                     f.write(f"append_resolution={append_resolution}\n")  # 儲存設定
                 print("設定已成功儲存！")  # 在終端顯示成功訊息
                 self.save_original_settings()  # 更新初始設定值
-                show_message_box(self, "成功", "設定已成功儲存！", QMessageBox.Icon.Information)
             except Exception as e:
                 logging.error(f"儲存設定失敗：{e}")  # 在終端記錄錯誤
                 show_message_box(self, "錯誤", f"無法儲存設定：{e}", QMessageBox.Icon.Critical)
@@ -872,7 +887,7 @@ class SettingsDialog(QDialog):
 
     def load_settings(self):
         """從設定檔中載入設定"""
-        settings_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.txt")  # 確保路徑正確
+        settings_file = os.path.join(os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__)), "settings.txt")
         if os.path.exists(settings_file):
             try:
                 with open(settings_file, "r", encoding="utf-8") as f:  # 使用 UTF-8 編碼讀取
