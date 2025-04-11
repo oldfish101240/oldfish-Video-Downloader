@@ -80,5 +80,5 @@
   A：目前次軟體**僅支援於YouTube網站上下載影片**，但我們正在努力支援其他網站，等待好消息！  
 
 ##  授權條款
-本專案使用 [MIT License](LICENSE)。
+本專案使用 [MIT License](LICENSE)。  
 Copyright (c) 2025 老魚oldfish
