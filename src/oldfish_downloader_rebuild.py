@@ -942,7 +942,7 @@ class SettingsDialog(QDialog):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
-            reply.setWindowIcon(QIcon(os.path.join(self.assets_dir, "icon.ico")))  # 使用 icon.ico
+            # 修正錯誤：移除對 reply.setWindowIcon 的調用
             if reply == QMessageBox.StandardButton.Yes:
                 return  # 停留在設定視窗，讓用戶返回儲存
         super().reject()  # 關閉視窗
