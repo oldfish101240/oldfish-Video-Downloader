@@ -59,7 +59,7 @@
 
 ## 貢獻
 ### 回報 Bug
-請在 [GitHub Issues](https://www.google.com/search?q=https://github.com/oldfish101240/oldfish-Video-Downloader/issues) 上提交您發現的任何 Bug。
+請在 [Issues頁面](https://github.com/oldfish101240/oldfish-Video-Downloader/issues) 上提交您發現的任何 Bug。
 
 ## 已知問題   
 1. 第一次使用時可能會下載有點久，因為要安裝ffmpeg  
