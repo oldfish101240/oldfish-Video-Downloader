@@ -21,7 +21,7 @@
 - [貢獻](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#貢獻)
 - [已知問題](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#已知問題)
 - [常見問題FAQ](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#常見問題FAQ)
-- [授權條款](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#授權條款)
+- [版權和許可](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#版權和許可)
 
 ## 特色 
 - 支援下載最高4K畫質
@@ -79,6 +79,6 @@
 - Q：能下載非YouTube網站上的影片嗎？  
   A：目前次軟體**僅支援於YouTube網站上下載影片**，但我們正在努力支援其他網站，等待好消息！  
 
-##  授權條款
-本專案使用 [MIT License](LICENSE)。  
+##  版權和許可
+軟體、程式碼及文件版權由[老魚oldfish](https://github.com/oldfish101240)所有。軟體依據 [MIT License](LICENSE)發布。  
 Copyright (c) 2025 老魚oldfish
