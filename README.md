@@ -1,6 +1,6 @@
 <div align="center">
   
-  <img src="src/assets/icon.png" alt="oldfish-Video-Downloader Logo" width="200">  
+  <img src="src/main/assets/icon.png" alt="oldfish-Video-Downloader Logo" width="200">  
   
   # oldfish影片下載器  
   一個可以簡單下載YouTube影片的軟體  
