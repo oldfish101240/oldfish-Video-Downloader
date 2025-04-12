@@ -13,15 +13,15 @@
 </div>
 
 ## 目錄
-- [特色](https://github.com/oldfish101240/oldfish-Video-Downloader#特色)
-- [目標](https://github.com/oldfish101240/oldfish-Video-Downloader#未來計劃)
-- [如何安裝](https://github.com/oldfish101240/oldfish-Video-Downloader#如何安裝)
-- [如何使用](https://github.com/oldfish101240/oldfish-Video-Downloader#如何使用)
-- [系統需求](https://github.com/oldfish101240/oldfish-Video-Downloader#系統需求)
-- [貢獻](https://github.com/oldfish101240/oldfish-Video-Downloader#貢獻)
-- [已知問題](https://github.com/oldfish101240/oldfish-Video-Downloader#已知問題)
-- [常見問題FAQ](https://github.com/oldfish101240/oldfish-Video-Downloader#常見問題FAQ)
-- [授權條款](https://github.com/oldfish101240/oldfish-Video-Downloader#授權條款)
+- [特色](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#特色)
+- [目標](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#未來計劃)
+- [如何安裝](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何安裝)
+- [如何使用](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何使用)
+- [系統需求](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#系統需求)
+- [貢獻](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#貢獻)
+- [已知問題](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#已知問題)
+- [常見問題FAQ](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#常見問題FAQ)
+- [授權條款](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#授權條款)
 
 ## 特色 
 - 支援下載最高4K畫質
