@@ -1,32 +1,84 @@
-[![Typing SVG](https://readme-typing-svg.demolab.com?font=Ubuntu&size=70&duration=2000&pause=200&color=00A6DA&center=true&vCenter=true&multiline=true&width=1000&height=200&lines=oldfish+Video+Downloader;-%E7%94%B1%E8%80%81%E9%AD%9A%E8%A3%BD%E4%BD%9C)](https://git.io/typing-svg)
+<div align="center">
+  
+  <img src="src/assets/icon.png" alt="oldfish-Video-Downloader Logo" width="200">  
+  
+  # oldfish影片下載器  
+  一個可以簡單下載YouTube影片的軟體  
+  
+  [![最新版本](https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader?label=最新版本)](https://github.com/oldfish101240/oldfish-Video-Downloader/releases/latest)
+[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/oldfish101240/oldfish-Video-Downloader/total?label=下載次數)](https://github.com/oldfish101240/oldfish-Video-Downloader/releases)
+![GitHub top language](https://img.shields.io/github/languages/top/oldfish101240/oldfish-Video-Downloader)
+![GitHub watchers](https://img.shields.io/github/watchers/oldfish101240/oldfish-Video-Downloader)
 
-[![最新版本](https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader?label=最新版本)](https://github.com/oldfish101240/oldfish-Video-Downloader/releases)
+</div>
 
+## 目錄
+- [特色](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#特色)
+- [未來計劃](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#未來計劃)
+- [如何安裝](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何安裝)
+- [如何使用](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何使用)
+- [系統需求](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#系統需求)
+- [貢獻](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#貢獻)
+- [已知問題](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#已知問題)
+- [常見問題FAQ](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#常見問題FAQ)
+- [版權和許可](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#版權和許可)
 
+## 特色 
+- 支援下載最高4K畫質
+- 同時下載多部影片
+- 下載shorts短片
+- 下載音軌
+- 操作簡單不複雜
+- 完全免費！
 
-## 簡介
-一個可以簡單下載YouTube影片的軟體  
+## 未來計劃
+- 增加支援下載非YouTube的影片  
+- 增加支援更多影片格式供下載  
+- (未來將新增更多)
 
-## 如何使用  
-1. 解壓縮oldfish_downloader_vX.X.X.zip  
-2. 打開oldfish_downloader.exe  
-3. 輸入欲下載的影片網址  
-4. 選擇正確畫質、檔案格式 
-5. 按下"下載"按鈕  
-6. 等待顯示"下載完畢"(就算進度條顯示100%也不一定下載完成)  
-7. 按下"開啟下載資料夾"即可找到下載的檔案  
+## 如何安裝
+1. 下載[最新版本](https://github.com/oldfish101240/oldfish-Video-Downloader/releases/latest)  
+2. 解壓縮oldfish_downloader_vX.X.X.zip  
+3. 打開oldfish_downloader.exe
+4. 等待安裝FFmpeg(必要依賴)
+5. 完成！
+
+## 如何使用
+1. 打開oldfish_downloader.exe  
+2. 輸入欲下載的影片網址  
+3. 選擇正確畫質、檔案格式 
+4. 按下"下載"按鈕  
+5. 選擇欲下載的格式  
+6. 按下"開始下載"按鈕  
+7. 等待顯示"下載完畢"  
+8. 按下"開啟下載資料夾"即可找到下載的檔案  
+
+## 系統需求
+- Windows 10/11 64bit
+- 200MB以上的儲存空間
+
+## 貢獻
+### 回報 Bug
+請在 [Issues頁面](https://github.com/oldfish101240/oldfish-Video-Downloader/issues) 上提交您發現的任何 Bug。
 
 ## 已知問題   
 1. 第一次使用時可能會下載有點久，因為要安裝ffmpeg  
-2. 下載下來的影片可能無法播放，可能是電腦不支援該編碼器，可以試著依據錯誤訊息從Microsoft Store下載視訊延伸模組，或嘗試改用第三方影片播放器
+2. 下載的影片可能無法播放，可能是電腦不支援該編碼器，可以從Microsoft Store下載視訊延伸模組，或嘗試改用第三方影片播放器
+3. 軟體可能會被您的防毒軟體偵測為病毒，即使軟體並不是病毒。如要解決此問題，請至您的防毒軟體將程式所在位置設為排除項目
 
-## 目標
-- [x] 下載720p以下的畫質的影片
-- [x] FFmpeg安裝程式
-- [x] 重複下載偵測
-- [x] 關於頁面
-- [x] GitHub傳送門
-- [ ] 下載非YouTube的影片
-- [ ] 下載更多影片格式
-- [ ] 自訂下載位置
-(未來將新增更多)
+## 常見問題FAQ
+- Q：為甚麼軟體被偵測為病毒？  
+  A：本軟體為開源項目，並未加入惡意程式碼。會被偵測為病毒的原因是因為本軟體經過打包，請放心！
+   
+- Q：為甚麼影片下載這麼久？  
+  A：影片下載的速度依據您的網速而定，尤其是在下載高畫質且片長超過5分鐘的影片時，會下載較長時間，請耐心等候
+  
+- Q：能在Windows 7以下的舊環境運行此軟體嗎？  
+  A：因為作者本人沒有搭載Windows 7以下的作業系統的電腦，因此無法測試。不過你也可以試試！
+  
+- Q：能下載非YouTube網站上的影片嗎？  
+  A：目前次軟體**僅支援於YouTube網站上下載影片**，但我們正在努力支援其他網站，等待好消息！  
+
+##  版權和許可
+軟體、程式碼及文件版權由[老魚oldfish](https://github.com/oldfish101240)所有。軟體依據 [MIT License](LICENSE)發布。  
+Copyright (c) 2025 老魚oldfish
