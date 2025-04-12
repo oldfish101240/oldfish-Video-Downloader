@@ -14,7 +14,7 @@
 
 ## 目錄
 - [特色](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#特色)
-- [目標](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#未來計劃)
+- [未來計劃](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#未來計劃)
 - [如何安裝](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何安裝)
 - [如何使用](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何使用)
 - [系統需求](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#系統需求)
