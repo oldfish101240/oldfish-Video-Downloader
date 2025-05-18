@@ -21,7 +21,6 @@
 
 ## 目錄
 - [特色](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#特色)
-- [未來計劃](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#未來計劃)
 - [如何安裝](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何安裝)
 - [如何使用](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#如何使用)
 - [系統需求](https://github.com/oldfish101240/oldfish-Video-Downloader?tab=readme-ov-file#系統需求)
@@ -37,11 +36,6 @@
 - 下載音軌
 - 操作簡單不複雜
 - 完全免費！
-
-## 未來計劃
-- 增加支援下載非YouTube的影片  
-- 增加支援更多影片格式供下載  
-- (未來將新增更多)
 
 ## 如何安裝
 1. 下載[最新版本](https://github.com/oldfish101240/oldfish-Video-Downloader/releases/latest)  
