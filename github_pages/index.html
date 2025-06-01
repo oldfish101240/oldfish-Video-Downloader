@@ -2,8 +2,16 @@
 <html>
 <head>
     <title>oldfish影片下載器</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
     <style>
-      
+      /* ----------------------------------------------------- */
+      /* 1. 全局和通用樣式 */
+      /* ----------------------------------------------------- */
+      * {
+          box-sizing: border-box; /* 確保 padding 和 border 不會增加元素總寬度 */
+      }
       .navbar {
           display: flex;             /* 啟用 Flexbox 佈局 */
           align-items: center;       /* 垂直居中對齊所有子項目 */
@@ -116,6 +124,249 @@
         transform: scale(0.8);
       }
 
+
+
+      /* ----------------------------------------------------- */
+      /* 2. 手機版樣式 (這些是預設樣式，針對小螢幕) */
+      /* ----------------------------------------------------- */
+      * {
+          box-sizing: border-box; /* 確保 padding 和 border 不會增加元素總寬度 */
+      }
+      .navbar {
+          display: flex;             /* 啟用 Flexbox 佈局 */
+          align-items: center;       /* 垂直居中對齊所有子項目 */
+          justify-content: space-between;;
+          gap: 30px;
+  
+          background-color:rgba(211, 7, 7, 0); /* Navbar 的深藍色背景 */
+          padding: 10px 10px;       /* Navbar 的上下左右內邊距 */
+          color: rgb(255, 255, 255);             /* 預設文字顏色 */
+          height: 80px;             /* 確保 Navbar 有足夠高度 */
+      }
+  
+      /* 左側區塊：網站標題 */
+      .navbar-left {
+          width: 200px;
+      }
+  
+      .navbar-brand {
+          text-decoration: none;
+          color: white;
+          font-size: 24px; /* 根據圖片調整字體大小 */
+          font-weight: bold;
+      }
+
+      /* 中間區塊：藍色按鈕組 */
+      .navbar-center-buttons {
+          display: none;
+          
+          justify-content: center; /* 讓內部的按鈕組水平居中 */
+          flex-grow: 1;          /* <--- 關鍵！讓這個容器佔據所有剩餘空間，這樣它才能把內容推到中間 */
+          transform: translateX(-48px);
+      }
+
+      .nav-buttons-list {
+          list-style: none; /* 移除列表符號 */
+          margin: 0;
+          padding: 0;
+          display: flex;     /* 讓列表項水平排列 */
+          gap: 15px;         /* 按鈕之間的間距 */
+      }
+
+      .nav-button {
+          display: flex;             /* 讓按鈕內部的文字也能上下居中 */
+          justify-content: center;
+          align-items: center;
+      
+          text-decoration: none;
+          color: white;
+          background-color: #5ea8e9; /* 圖片中按鈕的較淺藍色 */
+          padding: 10px 25px;       /* 按鈕的內邊距 */
+          border-radius: 5px;
+          font-size: 16px;
+          transition: background-color 0.3s ease;
+      }
+
+      .nav-button:hover {
+          background-color: #4c8fd1; /* 懸停時顏色變深 */
+      }
+
+      /* 右側區塊：作者信息 */
+      .navbar-right {
+          /* 這裡不需要特別設置 flex 屬性，因為它是第三個元素，會被 space-between 推到右邊 */
+      }
+
+      .author-info {
+          font-size: 24px; /* 根據圖片調整字體大小 */
+          color: white;
+          text-decoration: none;
+          justify-content: right;
+      }
+        
+        
+      
+      img{
+        width: 200px;
+        height: 200px;
+        transform: translateY(40px);
+      }  
+      body{
+        background-color: #358cd8;
+        font-family: "微軟正黑體", sans-serif;
+        text-align: center;
+        margin: 0;
+        padding: 0;
+        min-width: 630px;
+      }  
+      h1{
+        font-size:70px;
+        transform: translateY(0px);
+        
+      }
+      #intro{
+        font-size:30px;
+        transform: translateY(-30px);
+        
+      }
+      #downloadbtn{
+        background: #ffffff;
+        color: #358cd8;
+        padding: 20px 60px;
+        border-radius: 10px;
+        text-decoration: none;
+        display: inline-block;
+        transition: transform 0.2s ease;
+        user-select: none;
+        font-size:40px;
+        font-weight: bold;
+      }
+      #downloadbtn:hover{
+        transform: scale(1);
+      }
+      #downloadbtn:active{
+        transform: scale(0.8);
+      }
+      
+      
+      /* ------------------------------------------------------------- -*/
+      /* 2. 桌面版樣式(使用 Media Query，當螢幕寬度達到或超過特定斷點時生效)*/
+      /* --------------------------------------------------------------*/
+      @media (min-width: 650px) { /* <--- 請確認這個斷點是否正確，可嘗試 992px 或 1200px */
+      * {
+          box-sizing: border-box; /* 確保 padding 和 border 不會增加元素總寬度 */
+      }
+      .navbar {
+          display: flex;             /* 啟用 Flexbox 佈局 */
+          align-items: center;       /* 垂直居中對齊所有子項目 */
+          justify-content: center;
+          gap: 30px;
+  
+          background-color:rgba(255, 255, 255, 0); /* Navbar 的深藍色背景 */
+          padding: 10px 20px;       /* Navbar 的上下左右內邊距 */
+          color: white;             /* 預設文字顏色 */
+          height: 80px;             /* 確保 Navbar 有足夠高度 */
+      }
+  
+      /* 左側區塊：網站標題 */
+      .navbar-left {
+      /* 這裡不需要特別設置 flex 屬性，因為它是第一個元素，會被 space-between 推到左邊 */
+      }
+  
+      .navbar-brand {
+          text-decoration: none;
+          color: white;
+          font-size: 24px; /* 根據圖片調整字體大小 */
+          font-weight: bold;
+      }
+
+      /* 中間區塊：藍色按鈕組 */
+      .navbar-center-buttons {
+          display: flex;         /* 讓這個容器也成為 Flex 容器 */
+          justify-content: center; /* 讓內部的按鈕組水平居中 */
+          flex-grow: 1;          /* <--- 關鍵！讓這個容器佔據所有剩餘空間，這樣它才能把內容推到中間 */
+          transform: translateX(-48px);
+      }
+
+      .nav-buttons-list {
+          list-style: none; /* 移除列表符號 */
+          margin: 0;
+          padding: 0;
+          display: flex;     /* 讓列表項水平排列 */
+          gap: 15px;         /* 按鈕之間的間距 */
+      }
+
+      .nav-button {
+          display: flex;             /* 讓按鈕內部的文字也能上下居中 */
+          justify-content: center;
+          align-items: center;
+      
+          text-decoration: none;
+          color: white;
+          background-color: #5ea8e9; /* 圖片中按鈕的較淺藍色 */
+          padding: 10px 25px;       /* 按鈕的內邊距 */
+          border-radius: 5px;
+          font-size: 16px;
+          transition: background-color 0.3s ease;
+      }
+
+      .nav-button:hover {
+          background-color: #4c8fd1; /* 懸停時顏色變深 */
+      }
+
+      /* 右側區塊：作者信息 */
+      .navbar-right {
+          /* 這裡不需要特別設置 flex 屬性，因為它是第三個元素，會被 space-between 推到右邊 */
+      }
+
+      .author-info {
+          font-size: 16px; /* 根據圖片調整字體大小 */
+          color: white;
+          text-decoration: none;
+      }
+        
+        
+      
+      img{
+        width: 150px;
+        height: 150px;
+        transform: translateY(40px);
+      }  
+      body{
+        background-color: #358cd8;
+        font-family: "微軟正黑體", sans-serif;
+        text-align: center;
+        padding: 20px;
+        min-width: 630px;
+      }  
+      h1{
+        font-size:60px;
+        transform: translateY(0px);
+        
+      }
+      #intro{
+        font-size:25px;
+        transform: translateY(-30px);
+        
+      }
+      #downloadbtn{
+        background: #ffffff;
+        color: #358cd8;
+        padding: 15px 40px;
+        border-radius: 5px;
+        text-decoration: none;
+        display: inline-block;
+        transition: transform 0.2s ease;
+        user-select: none;
+        font-size:25px;
+        font-weight: bold;
+      }
+      #downloadbtn:hover{
+        transform: scale(1.5);
+      }
+      #downloadbtn:active{
+        transform: scale(0.8);
+      }
+      }
     </style>
 </head>
 <body>
