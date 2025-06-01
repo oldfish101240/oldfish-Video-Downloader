@@ -12,10 +12,7 @@
 ![license](https://img.shields.io/github/license/oldfish101240/oldfish-Video-Downloader.svg)
 ![last-commit](https://img.shields.io/github/last-commit/oldfish101240/oldfish-Video-Downloader.svg)
 
-# 這是一個即將不再更新的專案
-# 因為我即將重寫一個新版本的下載器，完成後將會在此放下連結
-# 感謝您使用oldfish影片下載器
-# (此版本的下載器還是可以工作，只是不再更新)
+
 
 </div>
 
