@@ -36,13 +36,13 @@
 
 ## 如何安裝
 1. 下載[最新版本](https://github.com/oldfish101240/oldfish-Video-Downloader/releases/latest)  
-2. 解壓縮oldfish_downloader_vX.X.X.zip  
-3. 打開oldfish_downloader.exe
+2. 解壓縮oldfish_downloader.zip  
+3. 打開oldfish影片下載器.exe
 4. 等待安裝FFmpeg(必要依賴)
 5. 完成！
 
 ## 如何使用
-1. 打開oldfish_downloader.exe  
+1. 打開oldfish影片下載器.exe  
 2. 輸入欲下載的影片網址  
 3. 選擇正確畫質、檔案格式 
 4. 按下"下載"按鈕  
@@ -53,7 +53,7 @@
 
 ## 系統需求
 - Windows 10/11 64bit
-- 200MB以上的儲存空間
+- 500MB以上的儲存空間
 
 ## 貢獻
 ### 回報 Bug
@@ -72,10 +72,10 @@
   A：影片下載的速度依據您的網速而定，尤其是在下載高畫質且片長超過5分鐘的影片時，會下載較長時間，請耐心等候
   
 - Q：能在Windows 7以下的舊環境運行此軟體嗎？  
-  A：因為作者本人沒有搭載Windows 7以下的作業系統的電腦，因此無法測試。不過你也可以試試！
+  A：因為作者本人沒有搭載Windows 7以下的作業系統的電腦，因此無法測試。不過您也可以試試！
   
 - Q：能下載非YouTube網站上的影片嗎？  
-  A：目前次軟體**僅支援於YouTube網站上下載影片**，但我們正在努力支援其他網站，等待好消息！  
+  A：目前此軟體**僅支援於YouTube網站上下載影片**，但我們正在努力支援其他網站，等待好消息！  
 
 ##  版權和許可
 軟體、程式碼及文件版權由[老魚oldfish](https://github.com/oldfish101240)所有。軟體依據 [MIT License](LICENSE)發布。  
