@@ -5,10 +5,5 @@ download-old/
 downloads-OLD/
 old_things/
 .vs/
-ffmpeg-7.1.1-essentials_build
-oldfish_downloader.spec
-oldfish_downloader_rebuild.spec
-oldfish_downloader_oldUI.py
-oldfish_downloader_only_onevideo.py
-ofdlr_exetest.py
 settings.txt
+已放棄/
