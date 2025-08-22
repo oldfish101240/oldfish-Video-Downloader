@@ -1,10 +1,18 @@
-import webview
+from PySide6.QtCore import QObject, Slot, QUrl, Signal
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebChannel import QWebChannel
 import os
+import sys
 import time
 import yt_dlp # 導入 yt-dlp 庫
 import math # 導入 math 模組用於計算 GCD
 import threading # 導入 threading 模組用於非同步下載
 import subprocess # 導入 subprocess 模組用於開啟檔案位置
+import hashlib
+import urllib.request
+import json
 
 class AnsiCodes:
     OKBLUE = '\033[94m'
@@ -21,6 +29,21 @@ def error_console(message):
 
 def debug_console(message):
     print(f"{AnsiCodes.DEBUG}[DEBUG]{AnsiCodes.ENDC} {message}")
+
+def progress_console(message):
+    try:
+        sys.stdout.write('\r' + message)
+        sys.stdout.flush()
+    except Exception:
+        # 後備：若 stdout 不可寫，使用一般列印
+        print(message)
+
+def end_progress_line():
+    try:
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 debug_console("啟動 oldfish影片下載器...")
 
@@ -45,6 +68,23 @@ HTML = fr"""
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>oldfish影片下載器</title>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        // 初始化 Qt WebChannel 並建立與後端的橋接，提供 window.pywebview.api 相容層
+        (function(){{
+            function initChannel(){{
+                if (typeof QWebChannel === 'undefined' || !window.qt || !qt.webChannelTransport){{
+                    // 若尚未就緒，稍後重試
+                    return setTimeout(initChannel, 50);
+                }}
+                new QWebChannel(qt.webChannelTransport, function(channel){{
+                    window.api = channel.objects.api;
+                    window.pywebview = {{ api: window.api }};
+                }});
+            }}
+            initChannel();
+        }})();
+    </script>
     <style>
         :root {{
             --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
@@ -571,6 +611,12 @@ HTML = fr"""
             </div>
         </div>
     </div>
+    <!-- 全局載入中遮罩 -->
+    <div class="loading-bg" id="loading-bg" style="position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.45); z-index: 15000; display: none;">
+        <div style="position:absolute; top:50%; left:50%; transform: translate(-50%,-50%); background:#23262f; color:#e5e7eb; padding:16px 22px; border-radius:12px; box-shadow:0 4px 24px #000a; font-size:16px;">
+            載入中...
+        </div>
+    </div>
     <div class="modal-bg" id="modal-bg">
         <div class="modal">
             <img class="modal-icon" src="{ICON}" alt="icon">
@@ -747,6 +793,7 @@ HTML = fr"""
             videoModalBg.classList.remove('show');
             setTimeout(() => {{
                 videoModalBg.style.display = 'none';
+                hideLoading();
             }}, 200);
         }}
 
@@ -764,6 +811,8 @@ HTML = fr"""
                 showModal("網址格式錯誤", "</div><div style='text-align:left;'><br>正確格式範例：<br>https://www.youtube.com/watch?v=xxxx<br>https://youtu.be/xxxx</div>");
                 return;
             }}
+            // 立即顯示載入中，避免前一層阻塞繪製
+            requestAnimationFrame(() => showLoading());
             showVideoModal(url);
         }}
 
@@ -772,6 +821,15 @@ HTML = fr"""
          */
         function openSettings() {{
             showModal("提醒", "設定功能尚未實作");
+        }}
+
+        function showLoading() {{
+            var lb = document.getElementById('loading-bg');
+            if (lb){{ lb.style.display = 'flex'; }}
+        }}
+        function hideLoading() {{
+            var lb = document.getElementById('loading-bg');
+            if (lb){{ lb.style.display = 'none'; }}
         }}
 
         /**
@@ -784,100 +842,103 @@ HTML = fr"""
             setTimeout(() => videoModalBg.classList.add('show'), 10);
             document.getElementById('video-modal-loading').style.display = '';
             document.getElementById('video-modal-content').style.display = 'none';
-            // 取得影片資訊
-            window.pywebview.api.get_video_info(url).then(function(info) {{
-                lastVideoInfo = info; // 儲存資訊以供格式變更時使用
+            // 使用 requestAnimationFrame 確保樣式更新後再顯示，避免同步阻塞不重繪
+            requestAnimationFrame(() => showLoading());
+            // 背景取得影片資訊，前端以回呼接收，避免阻塞
+            setTimeout(function(){{
+                window.__onVideoInfo = function(info) {{
+                    try {{ lastVideoInfo = info; }} catch(e) {{}}
 
-                // 畫質選項（由高到低排序）
-                var sel = document.getElementById('video-modal-quality');
-                sel.innerHTML = '';
-                var qualities = (info.qualities || []).slice();
-                qualities.sort(function(a, b) {{
-                    // 解析 label 內的數字（如 4K, 1080p, 720p, 480p, 360p）
-                    function getValue(q) {{
-                        if (q.label.endsWith('K')) return parseInt(q.label) * 1000;
-                        var m = q.label.match(/(\d+)p/);
-                        return m ? parseInt(m[1]) : 0;
+                    // 畫質選項（由高到低排序）
+                    var sel = document.getElementById('video-modal-quality');
+                    sel.innerHTML = '';
+                    var qualities = (info.qualities || []).slice();
+                    qualities.sort(function(a, b) {{
+                        // 解析 label 內的數字（如 4K, 1080p, 720p, 480p, 360p）
+                        function getValue(q) {{
+                            if (q.label.endsWith('K')) return parseInt(q.label) * 1000;
+                            var m = q.label.match(/(\d+)p/);
+                            return m ? parseInt(m[1]) : 0;
+                        }}
+                        return getValue(b) - getValue(a);
+                    }});
+                    qualities.forEach(function(q) {{
+                        var opt = document.createElement('option');
+                        opt.value = q.label;
+                        opt.innerText = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
+                        if (q.label === '1080p') opt.selected = true;
+                        sel.appendChild(opt);
+                    }});
+
+                    // 格式選項（mp4和mp3優先）
+                    var formatSel = document.getElementById('video-modal-format');
+                    formatSel.innerHTML = '';
+                    var formats = (info.formats || []).slice();
+                    formats.sort(function(a, b) {{
+                        var priority = {{"影片+音訊": 3, "影片": 2, "音訊": 1}};
+                        var pa = priority[a.desc] || 0;
+                        var pb = priority[b.desc] || 0;
+                        if (pa !== pb) return pb - pa;
+                        return a.value.localeCompare(b.value);
+                    }});
+                    formats.forEach(function(f) {{
+                        var opt = document.createElement('option');
+                        opt.value = f.value;
+                        opt.innerText = f.label + (f.desc ? ' (' + f.desc + ')' : '');
+                        formatSel.appendChild(opt);
+                    }});
+
+                    // 觸發格式變更以正確設定畫質/音訊選項
+                    onFormatChange();
+
+                    // 縮圖處理：如果 info.thumb 不存在或載入失敗，顯示文字
+                    const thumbElement = document.getElementById('video-modal-thumb');
+                    if (info.thumb) {{
+                        thumbElement.src = info.thumb;
+                        thumbElement.style.display = '';
+                        thumbElement.alt = "影片縮圖";
+                        const existingNoThumbText = thumbElement.parentNode.querySelector('.video-modal-thumb-text');
+                        if (existingNoThumbText) {{ existingNoThumbText.remove(); }}
+                    }} else {{
+                        thumbElement.src = '';
+                        thumbElement.style.display = 'none';
+                        let noThumbText = thumbElement.parentNode.querySelector('.video-modal-thumb-text');
+                        if (!noThumbText) {{
+                            noThumbText = document.createElement('div');
+                            noThumbText.classList.add('video-modal-thumb-text');
+                            noThumbText.innerText = "找不到縮圖";
+                            noThumbText.style.width = '100%';
+                            noThumbText.style.height = '100%';
+                            noThumbText.style.display = 'flex';
+                            noThumbText.style.alignItems = 'center';
+                            noThumbText.style.justifyContent = 'center';
+                            noThumbText.style.backgroundColor = '#181a20';
+                            noThumbText.style.borderRadius = '8px';
+                            noThumbText.style.color = '#b0b0b0';
+                            noThumbText.style.fontSize = '12px';
+                            noThumbText.style.textAlign = 'center';
+                            noThumbText.style.lineHeight = '1.2';
+                            noThumbText.style.padding = '5px';
+                            thumbElement.parentNode.insertBefore(noThumbText, thumbElement.nextSibling);
+                        }}
                     }}
-                    return getValue(b) - getValue(a);
-                }});
-                qualities.forEach(function(q) {{
-                    var opt = document.createElement('option');
-                    opt.value = q.label;
-                    opt.innerText = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
-                    if (q.label === '1080p') opt.selected = true;
-                    sel.appendChild(opt);
-                }});
 
-                // 格式選項（mp4和mp3優先）
-                var formatSel = document.getElementById('video-modal-format');
-                formatSel.innerHTML = '';
-                var formats = (info.formats || []).slice();
-                formats.sort(function(a, b) {{
-                    var priority = {{"影片+音訊": 3, "影片": 2, "音訊": 1}};
-                    var pa = priority[a.desc] || 0;
-                    var pb = priority[b.desc] || 0;
-                    if (pa !== pb) return pb - pa;
-                    return a.value.localeCompare(b.value);
-                }});
-                formats.forEach(function(f) {{
-                    var opt = document.createElement('option');
-                    opt.value = f.value;
-                    opt.innerText = f.label + (f.desc ? ' (' + f.desc + ')' : '');
-                    formatSel.appendChild(opt);
-                }});
-
-                // 觸發格式變更以正確設定畫質/音訊選項
-                onFormatChange();
-
-                // 縮圖處理：如果 info.thumb 不存在或載入失敗，顯示文字
-                const thumbElement = document.getElementById('video-modal-thumb');
-                if (info.thumb) {{
-                    thumbElement.src = info.thumb;
-                    thumbElement.style.display = ''; // 顯示圖片
-                    thumbElement.alt = "影片縮圖";
-                    // 移除可能存在的「找不到縮圖」文字元素
-                    const existingNoThumbText = thumbElement.parentNode.querySelector('.video-modal-thumb-text');
-                    if (existingNoThumbText) {{
-                        existingNoThumbText.remove();
-                    }}
-                }} else {{
-                    thumbElement.src = ''; // 清空圖片源
-                    thumbElement.style.display = 'none'; // 隱藏圖片
-                    // 檢查是否已存在「找不到縮圖」文字，避免重複添加
-                    let noThumbText = thumbElement.parentNode.querySelector('.video-modal-thumb-text');
-                    if (!noThumbText) {{
-                        noThumbText = document.createElement('div');
-                        noThumbText.classList.add('video-modal-thumb-text'); // 添加一個 class 以便識別和移除
-                        noThumbText.innerText = "找不到縮圖";
-                        noThumbText.style.width = '100%';
-                        noThumbText.style.height = '100%';
-                        noThumbText.style.display = 'flex';
-                        noThumbText.style.alignItems = 'center';
-                        noThumbText.style.justifyContent = 'center';
-                        noThumbText.style.backgroundColor = '#181a20';
-                        noThumbText.style.borderRadius = '8px';
-                        noThumbText.style.color = '#b0b0b0';
-                        noThumbText.style.fontSize = '12px';
-                        noThumbText.style.textAlign = 'center';
-                        noThumbText.style.lineHeight = '1.2';
-                        noThumbText.style.padding = '5px';
-                        thumbElement.parentNode.insertBefore(noThumbText, thumbElement.nextSibling);
-                    }}
-                }}
-
-
-                document.getElementById('video-modal-title').innerText = info.title || '';
-                document.getElementById('video-modal-duration').innerText = info.duration || '';
-                document.getElementById('video-modal-uploader').innerText = info.uploader ? info.uploader : '';
-                document.getElementById('video-modal-uploader').style.display = info.uploader ? '' : 'none';
-                document.getElementById('video-modal-loading').style.display = 'none';
-                document.getElementById('video-modal-content').style.display = '';
-            }}).catch(function(error) {{
-                console.error("獲取影片資訊時出錯:", error);
-                showModal('錯誤', '顯示找不到影片，請確認網址是否輸入正確'); // 特定錯誤訊息
-                closeVideoModal();
-            }});
+                    document.getElementById('video-modal-title').innerText = info.title || '';
+                    document.getElementById('video-modal-duration').innerText = info.duration || '';
+                    document.getElementById('video-modal-uploader').innerText = info.uploader ? info.uploader : '';
+                    document.getElementById('video-modal-uploader').style.display = info.uploader ? '' : 'none';
+                    document.getElementById('video-modal-loading').style.display = 'none';
+                    document.getElementById('video-modal-content').style.display = '';
+                    hideLoading();
+                }};
+                window.__onVideoInfoError = function(error) {{
+                    console.error('獲取影片資訊時出錯:', error);
+                    showModal('錯誤', '顯示找不到影片，請確認網址是否輸入正確');
+                    closeVideoModal();
+                    hideLoading();
+                }};
+                window.pywebview.api.start_get_video_info(url);
+            }} , 0);
         }}
 
         /**
@@ -1118,10 +1179,136 @@ try:
 except IOError as e:
     error_console(f"寫入 main.html 檔案時出錯: {e}")
 
-class Api:
-    def __init__(self, window):
-        self.window = window
+class Api(QObject):
+    # 從背景執行緒安全地要求在主執行緒執行 JS
+    eval_js_requested = Signal(str)
+    infoReady = Signal('QVariant')
+    infoError = Signal(str)
+    def __init__(self, page):
+        super().__init__()
+        self.page = page
         self.download_threads = {} # 用於儲存下載執行緒
+        self.eval_js_requested.connect(self._on_eval_js_requested)
+        self.completed_tasks = set()
+
+    def _extract_video_info(self, url):
+        ydl_opts = {
+            'quiet': True,
+            'simulate': True,
+            'force_generic_extractor': True,
+            'format': 'bestvideo+bestaudio/best',
+            'ffmpeg_location': FFMPEG,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=False)
+
+        title = info_dict.get('title', '無標題影片')
+        duration_seconds = info_dict.get('duration')
+        duration = ''
+        if duration_seconds:
+            minutes, seconds = divmod(duration_seconds, 60)
+            hours, minutes = divmod(minutes, 60)
+            if hours > 0:
+                duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            else:
+                duration = f"{minutes:02d}:{seconds:02d}"
+        uploader = info_dict.get('uploader')
+        thumb = info_dict.get('thumbnail')
+
+        qualities = []
+        formats = []
+        seen_qualities = set()
+        def gcd(a, b):
+            while b:
+                a, b = b, a % b
+            return a
+        has_mp4_video_audio = False
+        has_mp3_audio = False
+        has_any_audio = False
+        for f in info_dict.get('formats', []):
+            if f.get('vcodec') != 'none' and f.get('height'):
+                label = f"{f['height']}p"
+                ratio_str = ''
+                if f.get('width') and f.get('height'):
+                    common_divisor = gcd(f['width'], f['height'])
+                    calculated_ratio = f"({f['width'] // common_divisor}:{f['height'] // common_divisor})"
+                    if calculated_ratio in ["(16:9)", "(4:3)", "(19:6)"]:
+                        ratio_str = calculated_ratio
+                    else:
+                        ratio_str = '(Custom)'
+                if label not in seen_qualities:
+                    qualities.append({'label': label, 'ratio': ratio_str})
+                    seen_qualities.add(label)
+            ext = f.get('ext')
+            vcodec = f.get('vcodec')
+            acodec = f.get('acodec')
+            if ext == 'mp4' and vcodec != 'none' and acodec != 'none':
+                has_mp4_video_audio = True
+            if ext == 'mp3' and acodec != 'none' and vcodec == 'none':
+                has_mp3_audio = True
+            if acodec != 'none':
+                has_any_audio = True
+        if has_mp4_video_audio:
+            formats.append({'value': 'mp4', 'label': 'mp4', 'desc': '影片+音訊'})
+        if has_mp3_audio or has_any_audio:
+            formats.append({'value': 'mp3', 'label': 'mp3', 'desc': '音訊'})
+        def format_sort_key(f):
+            desc_priority = {'影片+音訊': 2, '音訊': 1}
+            return (desc_priority.get(f['desc'], 0), f['value'])
+        formats.sort(key=format_sort_key, reverse=True)
+
+        # 縮圖本地快取
+        def cache_thumb(thumb_url):
+            try:
+                if not thumb_url:
+                    return ''
+                cache_dir = os.path.join(ROOT_DIR, 'thumb_cache')
+                os.makedirs(cache_dir, exist_ok=True)
+                ext = os.path.splitext(thumb_url.split('?')[0])[-1]
+                if len(ext) > 5 or not ext:
+                    ext = '.jpg'
+                key = hashlib.md5(thumb_url.encode('utf-8')).hexdigest()
+                local_path = os.path.join(cache_dir, key + ext)
+                if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                    req = urllib.request.Request(thumb_url, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+                    })
+                    with urllib.request.urlopen(req, timeout=10) as resp, open(local_path, 'wb') as out:
+                        out.write(resp.read())
+                return 'file:///' + local_path.replace('\\', '/')
+            except Exception as e:
+                debug_console(f"縮圖快取失敗: {e}")
+                return ''
+        thumb_local = cache_thumb(thumb)
+
+        return {
+            'title': title,
+            'duration': duration,
+            'uploader': uploader,
+            'thumb': thumb_local or thumb or '',
+            'qualities': qualities,
+            'formats': formats,
+        }
+
+    @Slot(str, result=str)
+    def start_get_video_info(self, url):
+        # 在背景執行緒取得資訊，完成後以 signal 回傳，避免阻塞 UI/Main Thread
+        def task():
+            try:
+                info = self._extract_video_info(url)
+                self.infoReady.emit(info)
+            except Exception as e:
+                self.infoError.emit(str(e))
+        threading.Thread(target=task, daemon=True).start()
+        return 'started'
+
+    def _eval_js(self, script):
+        # 由於進度回呼在背景執行緒觸發，透過 signal 轉到主執行緒執行
+        self.eval_js_requested.emit(script)
+
+    @Slot(str)
+    def _on_eval_js_requested(self, script):
+        self.page.runJavaScript(script)
 
     def _download_progress_hook(self, d):
         """
@@ -1142,8 +1329,8 @@ class Api:
                 status = f"下載中 (未知進度)"
 
             # 將進度更新傳遞給前端
-            self.window.evaluate_js(f"window.updateDownloadProgress({task_id}, {percent}, '{status}');")
-            debug_console(f"任務 {task_id}: {status} {percent:.1f}%")
+            self._eval_js(f"window.updateDownloadProgress({task_id}, {percent}, '{status}');")
+            progress_console(f"任務 {task_id}: {status} {percent:.1f}%")
 
         elif d['status'] == 'finished':
             # 下載完成
@@ -1154,28 +1341,38 @@ class Api:
                 if filename:
                     filepath = os.path.join(ROOT_DIR, 'downloads', filename)
             
-            self.window.evaluate_js(f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{filepath.replace(os.sep, '/')}')") # 將路徑傳遞給前端
+            self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{filepath.replace(os.sep, '/')}')") # 將路徑傳遞給前端
+            end_progress_line()
             info_console(f"任務 {task_id}: 下載完成 - {d['filename']}")
+            try:
+                self.completed_tasks.add(task_id)
+            except Exception:
+                pass
         elif d['status'] == 'error':
             # 下載錯誤
-            self.window.evaluate_js(f"window.updateDownloadProgress({task_id}, 0, '錯誤', '{d.get('error', '未知錯誤')}');")
+            self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '錯誤', '{d.get('error', '未知錯誤')}');")
+            end_progress_line()
             error_console(f"任務 {task_id}: 下載錯誤 - {d.get('error', '未知錯誤')}")
         else:
             # 其他狀態
-            self.window.evaluate_js(f"window.updateDownloadProgress({task_id}, 0, '{d['status']}');")
+            self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '{d['status']}');")
+            end_progress_line()
             debug_console(f"任務 {task_id}: 狀態 - {d['status']}")
 
 
+    @Slot(str, result=str)
     def download(self, url):
         debug_console(f"下載按鈕被點擊，網址: {url}")
         info_console(f"收到下載請求: {url}")
         return "下載功能尚未實作"
 
+    @Slot(result=str)
     def open_settings(self):
         debug_console("設定按鈕被點擊")
         info_console("開啟設定視窗（尚未實作）")
         return "設定功能尚未實作"
 
+    @Slot(str, result='QVariant')
     def get_video_info(self, url):
         """
         為給定 URL 檢索影片資訊。
@@ -1270,12 +1467,38 @@ class Api:
 
             formats.sort(key=format_sort_key, reverse=True)
 
+            # 嘗試將縮圖下載並快取為本地檔案，避免 file:// 與遠端混用的顯示限制
+            def cache_thumb(thumb_url):
+                try:
+                    if not thumb_url:
+                        return ''
+                    cache_dir = os.path.join(ROOT_DIR, 'thumb_cache')
+                    os.makedirs(cache_dir, exist_ok=True)
+                    ext = os.path.splitext(thumb_url.split('?')[0])[-1]
+                    if len(ext) > 5 or not ext:
+                        ext = '.jpg'
+                    key = hashlib.md5(thumb_url.encode('utf-8')).hexdigest()
+                    local_path = os.path.join(cache_dir, key + ext)
+                    if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                        req = urllib.request.Request(thumb_url, headers={
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+                        })
+                        with urllib.request.urlopen(req, timeout=10) as resp, open(local_path, 'wb') as out:
+                            out.write(resp.read())
+                    # 轉為 file:/// URL（用正斜線）
+                    return 'file:///' + local_path.replace('\\', '/')
+                except Exception as e:
+                    debug_console(f"縮圖快取失敗: {e}")
+                    return ''
+
+            thumb_local = cache_thumb(thumb)
+
             info_console(f"成功取得影片資訊: {title}")
             return {
                 "title": title,
                 "duration": duration,
                 "uploader": uploader,
-                "thumb": thumb,
+                "thumb": thumb_local or thumb or '',
                 "qualities": qualities,
                 "formats": formats
             }
@@ -1283,6 +1506,7 @@ class Api:
             error_console(f"取得影片資訊時出錯: {e}")
             raise # 重新拋出異常，讓前端的 .catch() 能夠捕獲
 
+    @Slot(int, str, str, str, result=str)
     def start_download(self, task_id, url, quality, format_type):
         """
         使用 yt-dlp 開始影片下載，並在單獨的執行緒中運行。
@@ -1315,12 +1539,21 @@ class Api:
                 height = int(quality.replace("p", "").replace("K", "000"))
             except Exception:
                 height = 1080
-            # 讓 yt-dlp 自動選擇最佳影片與音訊並合併為 mp4
-            ydl_opts['format'] = 'bestvideo+bestaudio/best'
+            # 讓 yt-dlp 自動選擇最佳影片與音訊並合併為 mp4；指定畫質高度偏好
+            ydl_opts['format'] = f'(bestvideo[height<={height}]+bestaudio/best)[protocol!*=dash]/best'
             ydl_opts['merge_output_format'] = 'mp4'
             postprocessors.append({
                 'key': 'FFmpegVideoConvertor',
                 'preferedformat': 'mp4'
+            })
+            # 降低 yt-dlp 安靜程度避免關鍵錯誤被吞，並加入重試與斷線續傳
+            ydl_opts.update({
+                'quiet': False,
+                'retries': 5,
+                'fragment_retries': 5,
+                'continuedl': True,
+                'concurrent_fragment_downloads': 4,
+                'noprogress': True,
             })
         else:
             # 默認情況，或者處理其他格式
@@ -1341,9 +1574,19 @@ class Api:
             except Exception as e:
                 error_console(f"下載任務 {task_id} 失敗: {e}")
                 error_msg = str(e).replace("'", "\\'");
-                self.window.evaluate_js(
+                self._eval_js(
                     f"window.updateDownloadProgress({task_id}, 0, '錯誤', '下載失敗: {error_msg}');"
                 )
+            finally:
+                # 防止未回報導致前端停在下載中；若已完成則不覆蓋
+                try:
+                    already_done = task_id in getattr(self, 'completed_tasks', set())
+                except Exception:
+                    already_done = False
+                if not already_done:
+                    self._eval_js(
+                        f"window.updateDownloadProgress({task_id}, 0, '已停止');"
+                    )
 
         # 在單獨的執行緒中啟動下載
         download_thread = threading.Thread(target=_download_task);
@@ -1362,6 +1605,7 @@ class Api:
             self._download_progress_hook(d)
         return _wrapper_progress_hook
 
+    @Slot(str, result=str)
     def open_file_location(self, filepath_ignored): # 參數名稱更改為 filepath_ignored
         """
         總是開啟下載檔案的資料夾 (即 downloads 目錄)。
@@ -1408,15 +1652,40 @@ if __name__ == '__main__':
     except IOError as e:
         error_console(f"寫入 main.html 檔案時出錯: {e}")
 
-    # 啟動 pywebview 應用
-    window = webview.create_window(
-        'oldfish影片下載器',
-        url=main_html_path,
-        width=900,
-        height=700, # 調整高度以更好地顯示佇列
-        min_size=(700, 600)
-    )
-    api = Api(window)
-    # 修正：將 Api 類別中的方法作為函數公開
-    window.expose(api.get_video_info, api.start_download, api.download, api.open_settings, api.open_file_location)
-    webview.start(icon=f"{assets_path}/icon.ico")
+    # 啟動 PySide6/QtWebEngine 應用
+    app = QApplication(sys.argv)
+    main_window = QMainWindow()
+    main_window.setWindowTitle('oldfish影片下載器')
+    icon_path = os.path.join(assets_path, 'icon.ico')
+    if os.path.exists(icon_path):
+        main_window.setWindowIcon(QIcon(icon_path))
+
+    view = QWebEngineView()
+    channel = QWebChannel()
+    view.page().setWebChannel(channel)
+
+    api = Api(view.page())
+    channel.registerObject('api', api)
+    # 將後端背景取得資訊的結果回推到前端 JS（保持與原前端相容）
+    def on_info_ready(info):
+        # 直接呼叫前端處理流程：這裡模擬 window.pywebview.api.get_video_info 的 then
+        # 方案：將 info 暫存到 window.__lastVideoInfo 並觸發一個自定事件
+        payload = json.dumps(info).replace("'", "\\'")
+        view.page().runJavaScript(
+            "(function(){ window.__lastVideoInfo = " + payload + "; if (window.__onVideoInfo){ window.__onVideoInfo(window.__lastVideoInfo); } })();"
+        )
+    def on_info_error(msg):
+        safe = str(msg).replace("'", "\\'")
+        view.page().runJavaScript(
+            f"(function(){{ if (window.__onVideoInfoError){{ window.__onVideoInfoError('{safe}'); }} }})();"
+        )
+    api.infoReady.connect(on_info_ready)
+    api.infoError.connect(on_info_error)
+
+    # 載入本地 HTML
+    view.load(QUrl.fromLocalFile(main_html_path))
+    main_window.setCentralWidget(view)
+    main_window.resize(900, 700)
+    main_window.show()
+
+    sys.exit(app.exec())

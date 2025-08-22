@@ -7,3 +7,4 @@ old_things/
 .vs/
 settings.txt
 已放棄/
+__pycache__/
