@@ -1,6 +1,6 @@
 # v1.0.1無法正常安裝ffmpeg的解決方法  
 ### 因為近期ffmpeg的版本更新，導致就1.0.1及更舊的版本的下載器無法正常識別ffmpeg  
-### 而當遇到此問題的解覺方式如下：  
+### 而當遇到此問題的解決方式如下：  
   
 ## &emsp;&emsp;1. 先跟隨[此教學](https://github.com/oldfish101240/oldfish-Video-Downloader/edit/main/Guides/how_to_install(1.0.1)/README.md)的第1.~4.步  
   
