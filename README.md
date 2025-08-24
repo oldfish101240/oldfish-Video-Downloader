@@ -1,6 +1,6 @@
 <div align="center">
   
-  <img src="icon.png" alt="oldfish-Video-Downloader Logo" width="200">  
+  <img src="icon.png" alt="oldfish-Video-Downloader Logo" width="100">  
   
   # oldfish影片下載器  [![最新版本](https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader?label=)](https://github.com/oldfish101240/oldfish-Video-Downloader/releases/latest)
   一個可以簡單下載YouTube影片的軟體  
