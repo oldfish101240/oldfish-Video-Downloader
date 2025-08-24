@@ -10,7 +10,9 @@
   
 ## &emsp;&emsp;3. 將"ffmpeg-8.0-essentials_build"資料夾重新命名為"ffmpeg-7.1.1-essentials_build"  
 &emsp;&emsp;<img width="60%" alt="圖片" src="https://github.com/user-attachments/assets/b6f470a3-533c-400a-a2bd-54a900610ab7" />  
+  
 &emsp;&emsp;⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇  
+  
 &emsp;&emsp;<img width="60%" alt="圖片" src="https://github.com/user-attachments/assets/2092ba16-fe57-4c31-96d2-11fd41d0fd08" />  
   
 ## &emsp;&emsp;4. 重新開啟"oldfish影片下載器"  
