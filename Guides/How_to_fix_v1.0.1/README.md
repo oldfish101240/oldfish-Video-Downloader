@@ -2,7 +2,7 @@
 ### 因為近期ffmpeg的版本更新，導致就1.0.1及更舊的版本的下載器無法正常識別ffmpeg  
 ### 而當遇到此問題的解決方式如下：  
   
-## &emsp;&emsp;1. 先跟隨[此教學](https://github.com/oldfish101240/oldfish-Video-Downloader/blob/main/Guides/how_to_install(1.0.1)/README.md))的第1.~4.步  
+## &emsp;&emsp;1. 先跟隨[此教學](https://github.com/oldfish101240/oldfish-Video-Downloader/blob/main/Guides/how_to_install(1.0.1)/README.md)的第1.~4.步  
   
 ## &emsp;&emsp;2. 依序打開"main>ffmpeg-7.1.1-essentials_build"資料夾  
 &emsp;&emsp;<img width="60%" alt="圖片" src="https://github.com/user-attachments/assets/ab1e3538-5038-408e-8b77-f441a9febec8" />  
