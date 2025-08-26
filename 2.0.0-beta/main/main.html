@@ -157,21 +157,35 @@
             transform: scale(1.03);
             box-shadow: 0 4px 12px #111;
         }
+        
         .settings-btn {
-            position: absolute;
+            position: fixed;
             right: 24px;
             bottom: 24px;
-            width: 28px;
-            height: 28px;
-            background: none;
+            width: 56px;
+            height: 56px;
+            background: #2ecc71;
             border: none;
+            border-radius: 50%;
             cursor: pointer;
+            box-shadow: 0 4px 16px rgba(46, 204, 113, 0.3);
+            transition: all 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .settings-btn:hover {
+            background: #27ae60;
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4);
         }
         .settings-btn img {
             width: 28px;
             height: 28px;
-            filter: brightness(0.85);
+            filter: brightness(0) invert(1);
         }
+
         .hidden {
             display: none;
         }
@@ -340,7 +354,13 @@
             color: #e5e7eb;
             margin-bottom: 6px;
         }
-        .video-modal-select {
+        .custom-select {
+            position: relative;
+            width: 100%;
+            max-width: 300px;
+            user-select: none;
+        }
+        .custom-select-header {
             width: 100%;
             padding: 8px 12px;
             border-radius: 8px;
@@ -348,13 +368,161 @@
             background: #23262f;
             color: #e5e7eb;
             font-size: 15px;
-            margin-bottom: 0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .custom-select-header:hover {
+            border-color: #2ecc71;
+            background: #2b2e37;
+        }
+        .custom-select-header.active {
+            border-color: #2ecc71;
+            background: #2b2e37;
+            box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+        }
+        .custom-select-arrow {
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #e5e7eb;
+            transition: transform 0.2s ease;
+        }
+        .custom-select-header.active .custom-select-arrow {
+            transform: rotate(180deg);
+        }
+        .custom-select-options {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #23262f;
+            border: 1px solid #444;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .custom-select-options.show {
+            display: block;
+        }
+        .custom-select-option {
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid #333;
+        }
+        .custom-select-option:last-child {
+            border-bottom: none;
+        }
+        .custom-select-option:hover {
+            background: #2ecc71;
+            color: #fff;
+        }
+        .custom-select-option.selected {
+            background: #2ecc71;
+            color: #fff;
+        }
+
+
+
+        /* 淺色主題樣式 */
+        body.light-theme {
+            background: #f5f5f5;
+            color: #333;
+        }
+        body.light-theme .container {
+            background: #f5f5f5;
+        }
+        body.light-theme .sidebar {
+            background: #ffffff;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+        }
+        body.light-theme .nav-item {
+            color: #333;
+        }
+        body.light-theme .nav-item.selected {
+            background: #2ecc71;
+            color: #fff;
+        }
+        body.light-theme .nav-text {
+            color: #333;
+        }
+        body.light-theme .nav-item.selected .nav-text {
+            color: #fff;
+        }
+        body.light-theme .main {
+            background: #f5f5f5;
+        }
+
+        body.light-theme .search-input {
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }
+        body.light-theme .search-input:focus {
+            border-color: #2ecc71;
+        }
+        body.light-theme .queue-item {
+            background: #ffffff;
+            color: #333;
+        }
+        body.light-theme .custom-select-header {
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }
+        body.light-theme .custom-select-options {
+            background: #ffffff;
+            border-color: #ddd;
+        }
+        body.light-theme .custom-select-option {
+            color: #333;
+            border-bottom-color: #eee;
+        }
+        body.light-theme .settings-container {
+            background: #ffffff;
+            color: #333;
+        }
+        body.light-theme .settings-input {
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }
+        body.light-theme .settings-label {
+            color: #333;
+        }
+        body.light-theme .settings-section-title {
+            color: #333;
+        }
+        body.light-theme .settings-toggle-text {
+            color: #333;
+        }
+        body.light-theme .modal {
+            background: #ffffff;
+            color: #333;
+        }
+        body.light-theme .video-modal {
+            background: #ffffff;
+            color: #333;
+        }
+        body.light-theme .video-modal-title {
+            color: #333;
+        }
+        body.light-theme .video-modal-label {
+            color: #333;
         }
         .video-modal-actions {
             display: flex;
             justify-content: flex-end;
             align-items: center;
-            gap: 12px;
+            gap: 16px;
             padding: 24px 32px 32px 32px;
         }
         .video-modal-btn {
@@ -362,12 +530,17 @@
             color: #fff;
             border: none;
             border-radius: 8px;
-            padding: 0 28px;
-            height: 38px;
+            padding: 10px 20px;
+            height: 40px;
             font-size: 16px;
             cursor: pointer;
             font-weight: bold;
             transition: background 0.2s;
+            white-space: nowrap;
+            min-width: 100px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         .video-modal-btn.cancel {
             background: #444;
@@ -530,6 +703,7 @@
                 <img src="assets/quene.png" alt="佇列">
                 <span class="nav-text">佇列</span>
             </div>
+
         </div>
         <div class="main">
             <img class="title-img" id="title-img" src="assets/icon_text.png" alt="">
@@ -537,15 +711,19 @@
                 <input class="search-input" id="video-url" type="text" placeholder="請輸入影片網址...">
                 <button class="download-btn" onclick="downloadVideo()">下載</button>
             </div>
+            
+            <!-- 設定按鈕 - 右下角 -->
             <button class="settings-btn" id="settings-btn" onclick="openSettings()">
                 <img src="assets/settings.png" alt="設定">
             </button>
+
             <!-- 佇列頁面改造 -->
             <div class="queue-page" id="queue-page"> <!-- 移除 hidden class，改由 JS 完全控制 -->
                 <div class="queue-list" id="queue-list">
                     <!-- 影片任務將會動態新增到這裡 -->
                 </div>
             </div>
+
         </div>
     </div>
     <!-- 全局載入中遮罩 -->
@@ -576,9 +754,21 @@
                 </div>
                 <div class="video-modal-options">
                     <div class="video-modal-label" id="video-modal-quality-label">影片畫質</div>
-                    <select class="video-modal-select" id="video-modal-quality"></select>
+                    <div class="custom-select" id="quality-select">
+                        <div class="custom-select-header" onclick="toggleSelect('quality-select')">
+                            <span class="custom-select-text">請選擇畫質</span>
+                            <div class="custom-select-arrow"></div>
+                        </div>
+                        <div class="custom-select-options" id="quality-options"></div>
+                    </div>
                     <div class="video-modal-label" style="margin-top:18px;">影片格式</div>
-                    <select class="video-modal-select" id="video-modal-format" onchange="onFormatChange()"></select>
+                    <div class="custom-select" id="format-select">
+                        <div class="custom-select-header" onclick="toggleSelect('format-select')">
+                            <span class="custom-select-text">請選擇格式</span>
+                            <div class="custom-select-arrow"></div>
+                        </div>
+                        <div class="custom-select-options" id="format-options"></div>
+                    </div>
                 </div>
                 <div class="video-modal-actions">
                     <button class="video-modal-btn cancel" onclick="closeVideoModal()">取消</button>
@@ -672,28 +862,28 @@
             // Get all main content elements
             const titleImg = document.getElementById('title-img');
             const searchRow = document.getElementById('search-row');
-            const settingsBtn = document.getElementById('settings-btn');
             const queuePage = document.getElementById('queue-page');
             const queueList = document.getElementById('queue-list'); // Get reference to queue list
+            const settingsBtn = document.getElementById('settings-btn'); // 獲取設定按鈕
 
             if (pageName === 'home') {
                 document.getElementById('nav-home').classList.add('selected');
                 
-                titleImg.style.display = 'block'; // 顯示主頁元素
-                searchRow.style.display = 'flex';
-                settingsBtn.style.display = 'block';
+                if (titleImg) titleImg.style.display = 'block'; // 顯示主頁元素
+                if (searchRow) searchRow.style.display = 'flex';
+                if (settingsBtn) settingsBtn.style.display = 'block'; // 顯示設定按鈕
                 
-                queuePage.style.display = 'none'; // 隱藏佇列頁面
-                queueList.innerHTML = ''; // 清空佇列列表內容
+                if (queuePage) queuePage.style.display = 'none'; // 隱藏其他頁面
+                if (queueList) queueList.innerHTML = ''; // 清空佇列列表內容
 
             } else if (pageName === 'queue') {
                 document.getElementById('nav-queue').classList.add('selected');
                 
-                titleImg.style.display = 'none'; // 隱藏主頁元素
-                searchRow.style.display = 'none';
-                settingsBtn.style.display = 'none';
+                if (titleImg) titleImg.style.display = 'none'; // 隱藏主頁元素
+                if (searchRow) searchRow.style.display = 'none';
+                if (settingsBtn) settingsBtn.style.display = 'none'; // 隱藏設定按鈕
                 
-                queuePage.style.display = 'flex'; // 顯示佇列頁面
+                if (queuePage) queuePage.style.display = 'flex'; // 顯示佇列頁面
                 renderQueue(); // 渲染佇列內容
             }
         }
@@ -754,10 +944,17 @@
         }
 
         /**
-         * 開啟設定視窗/模態視窗。
+         * 開啟設定視窗。
          */
         function openSettings() {
-            showModal("提醒", "設定功能尚未實作");
+            window.pywebview.api.open_settings()
+                .then(result => {
+                    console.log('設定視窗已開啟:', result);
+                })
+                .catch(error => {
+                    console.error('開啟設定視窗失敗:', error);
+                    showModal('錯誤', '無法開啟設定視窗');
+                });
         }
 
         function showLoading() {
@@ -787,8 +984,8 @@
                     try { lastVideoInfo = info; } catch(e) {}
 
                     // 畫質選項（由高到低排序）
-                    var sel = document.getElementById('video-modal-quality');
-                    sel.innerHTML = '';
+                    var qualityOptions = document.getElementById('quality-options');
+                    qualityOptions.innerHTML = '';
                     var qualities = (info.qualities || []).slice();
                     qualities.sort(function(a, b) {
                         // 解析 label 內的數字（如 4K, 1080p, 720p, 480p, 360p）
@@ -800,16 +997,24 @@
                         return getValue(b) - getValue(a);
                     });
                     qualities.forEach(function(q) {
-                        var opt = document.createElement('option');
-                        opt.value = q.label;
-                        opt.innerText = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
-                        if (q.label === '1080p') opt.selected = true;
-                        sel.appendChild(opt);
+                        var optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
+                        optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
+                        if (q.label === '1080p') {
+                            optionDiv.classList.add('selected');
+                            const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                            if (qualitySelectText) {
+                                qualitySelectText.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                            }
+                            currentQuality = q.label;
+                        }
+                        qualityOptions.appendChild(optionDiv);
                     });
 
                     // 格式選項（mp4和mp3優先）
-                    var formatSel = document.getElementById('video-modal-format');
-                    formatSel.innerHTML = '';
+                    var formatOptions = document.getElementById('format-options');
+                    formatOptions.innerHTML = '';
                     var formats = (info.formats || []).slice();
                     formats.sort(function(a, b) {
                         var priority = {"影片+音訊": 3, "影片": 2, "音訊": 1};
@@ -819,14 +1024,36 @@
                         return a.value.localeCompare(b.value);
                     });
                     formats.forEach(function(f) {
-                        var opt = document.createElement('option');
-                        opt.value = f.value;
-                        opt.innerText = f.label + (f.desc ? ' (' + f.desc + ')' : '');
-                        formatSel.appendChild(opt);
+                        var optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = f.label + (f.desc ? ' (' + f.desc + ')' : '');
+                        optionDiv.onclick = () => selectOption('format-select', f.value, f.label + (f.desc ? ' (' + f.desc + ')' : ''));
+                        if (f.value === 'mp4') {
+                            optionDiv.classList.add('selected');
+                            const formatSelectText = document.querySelector('#format-select .custom-select-text');
+                            if (formatSelectText) {
+                                formatSelectText.textContent = f.label + (f.desc ? ' (' + f.desc + ')' : '');
+                            }
+                            currentFormat = f.value;
+                        }
+                        formatOptions.appendChild(optionDiv);
                     });
 
-                    // 觸發格式變更以正確設定畫質/音訊選項
-                    onFormatChange();
+                    // 設定預設值
+                    if (!currentQuality && qualities.length > 0) {
+                        currentQuality = qualities[0].label;
+                        const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                        if (qualitySelectText) {
+                            qualitySelectText.textContent = qualities[0].label + (qualities[0].ratio ? ' ' + qualities[0].ratio : '');
+                        }
+                    }
+                    if (!currentFormat && formats.length > 0) {
+                        currentFormat = formats[0].value;
+                        const formatSelectText = document.querySelector('#format-select .custom-select-text');
+                        if (formatSelectText) {
+                            formatSelectText.textContent = formats[0].label + (formats[0].desc ? ' (' + formats[0].desc + ')' : '');
+                        }
+                    }
 
                     // 縮圖處理：如果 info.thumb 不存在或載入失敗，顯示文字
                     const thumbElement = document.getElementById('video-modal-thumb');
@@ -878,42 +1105,166 @@
             } , 0);
         }
 
+        // 自定義下拉選單相關變數
+        let currentQuality = '';
+        let currentFormat = '';
+        let isQualitySelectOpen = false;
+        let isFormatSelectOpen = false;
+
+        /**
+         * 切換下拉選單的開關狀態
+         */
+        function toggleSelect(selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            
+            const options = select.querySelector('.custom-select-options');
+            const header = select.querySelector('.custom-select-header');
+            
+            if (!options || !header) return;
+            
+            // 關閉其他下拉選單
+            if (selectId === 'quality-select') {
+                closeSelect('format-select');
+                closeSelect('theme-select');
+                isQualitySelectOpen = !isQualitySelectOpen;
+                if (isQualitySelectOpen) {
+                    options.classList.add('show');
+                    header.classList.add('active');
+                } else {
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }
+            } else if (selectId === 'format-select') {
+                closeSelect('quality-select');
+                closeSelect('theme-select');
+                isFormatSelectOpen = !isFormatSelectOpen;
+                if (isFormatSelectOpen) {
+                    options.classList.add('show');
+                    header.classList.add('active');
+                } else {
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }
+            } else if (selectId === 'theme-select') {
+                closeSelect('quality-select');
+                closeSelect('format-select');
+                const isThemeSelectOpen = header.classList.contains('active');
+                if (!isThemeSelectOpen) {
+                    options.classList.add('show');
+                    header.classList.add('active');
+                } else {
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }
+            }
+        }
+
+        /**
+         * 關閉指定的下拉選單
+         */
+        function closeSelect(selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            
+            const options = select.querySelector('.custom-select-options');
+            const header = select.querySelector('.custom-select-header');
+            
+            if (!options || !header) return;
+            
+            options.classList.remove('show');
+            header.classList.remove('active');
+            
+            if (selectId === 'quality-select') {
+                isQualitySelectOpen = false;
+            } else if (selectId === 'format-select') {
+                isFormatSelectOpen = false;
+            }
+        }
+
+        /**
+         * 選擇下拉選單選項
+         */
+        function selectOption(selectId, value, text) {
+            const select = document.getElementById(selectId);
+            const headerText = select.querySelector('.custom-select-text');
+            const options = select.querySelectorAll('.custom-select-option');
+            
+            // 移除所有選項的選中狀態
+            options.forEach(option => option.classList.remove('selected'));
+            
+            // 為當前選擇的選項添加選中狀態
+            const selectedOption = Array.from(options).find(option => 
+                option.textContent === text
+            );
+            if (selectedOption) {
+                selectedOption.classList.add('selected');
+            }
+            
+            headerText.textContent = text;
+            
+            if (selectId === 'quality-select') {
+                currentQuality = value;
+                closeSelect('quality-select');
+            } else if (selectId === 'format-select') {
+                currentFormat = value;
+                closeSelect('format-select');
+                onFormatChange();
+            }
+        }
+
         /**
          * 處理影片格式選擇的變更。
          * 根據選擇的影片或音訊格式調整畫質選項。
          */
         function onFormatChange() {
-            const formatSelect = document.getElementById('video-modal-format');
-            const qualitySelect = document.getElementById('video-modal-quality');
+            const qualityOptions = document.getElementById('quality-options');
             const qualityLabel = document.getElementById('video-modal-quality-label');
             const audioTypes = ["mp3", "aac", "flac", "wav"];
 
-            if (audioTypes.includes(formatSelect.value)) {
+            if (audioTypes.includes(currentFormat)) {
                 // 如果是音訊格式，顯示音訊品質
-                qualitySelect.innerHTML = '';
+                qualityOptions.innerHTML = '';
                 AUDIO_QUALITIES.forEach(q => {
-                    const opt = document.createElement('option');
-                    opt.value = q.value;
-                    opt.innerText = q.label;
-                    qualitySelect.appendChild(opt);
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'custom-select-option';
+                    optionDiv.textContent = q.label;
+                    optionDiv.onclick = () => selectOption('quality-select', q.value, q.label);
+                    // 設定預設選中320kbps
+                    if (q.value === "320") {
+                        optionDiv.classList.add('selected');
+                    }
+                    qualityOptions.appendChild(optionDiv);
                 });
-                qualitySelect.value = "320"; // 預設音訊品質
+                currentQuality = "320"; // 預設音訊品質
+                const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                if (qualitySelectText) {
+                    qualitySelectText.textContent = "320kbps";
+                }
                 qualityLabel.innerText = "音質";
             } else {
                 // 如果是影片格式，從 lastVideoInfo 還原影片畫質
                 if (lastVideoInfo && lastVideoInfo.qualities) {
-                    qualitySelect.innerHTML = '';
+                    qualityOptions.innerHTML = '';
                     let sortedQualities = sortQualities(lastVideoInfo.qualities);
+                    let defaultSet = false;
                     sortedQualities.forEach(q => {
-                        const opt = document.createElement('option');
-                        opt.value = q.label;
-                        opt.innerText = q.label + (q.ratio ? ' ' + q.ratio : '');
-                        qualitySelect.appendChild(opt);
+                        const optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                        optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
+                        // 設定預設選中1080p，如果沒有1080p則選第一個
+                        if (q.label === "1080p" || (!defaultSet && sortedQualities.indexOf(q) === 0)) {
+                            optionDiv.classList.add('selected');
+                            currentQuality = q.label;
+                            const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                            if (qualitySelectText) {
+                                qualitySelectText.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                            }
+                            defaultSet = true;
+                        }
+                        qualityOptions.appendChild(optionDiv);
                     });
-                    // 還原原始預設或第一個選項
-                    const default1080p = Array.from(qualitySelect.options).find(o => o.value === "1080p");
-                    if (default1080p) qualitySelect.value = "1080p";
-                    else if (qualitySelect.options.length > 0) qualitySelect.selectedIndex = 0;
                 }
                 qualityLabel.innerText = "影片畫質";
             }
@@ -926,8 +1277,8 @@
         async function confirmDownload() {
             const urlInput = document.getElementById('video-url');
             const url = urlInput.value.trim();
-            const quality = document.getElementById('video-modal-quality').value;
-            const format = document.getElementById('video-modal-format').value;
+            const quality = currentQuality;
+            const format = currentFormat;
 
             closeVideoModal(); // 關閉影片選擇模態視窗
 
@@ -1087,6 +1438,27 @@
                     showModal("錯誤", "無法開啟檔案位置。");
                 });
         }
+
+
+
+
+
+        // 點擊外部關閉下拉選單
+        document.addEventListener('click', function(event) {
+            const qualitySelect = document.getElementById('quality-select');
+            const formatSelect = document.getElementById('format-select');
+            
+            // 只有在影片選擇模態視窗才處理畫質和格式選擇的關閉
+            const videoModal = document.getElementById('video-modal-bg');
+            if (videoModal && videoModal.classList.contains('show')) {
+                if (qualitySelect && !qualitySelect.contains(event.target)) {
+                    closeSelect('quality-select');
+                }
+                if (formatSelect && !formatSelect.contains(event.target)) {
+                    closeSelect('format-select');
+                }
+            }
+        });
 
         // 首次載入時，確保顯示主頁
         document.addEventListener('DOMContentLoaded', () => {

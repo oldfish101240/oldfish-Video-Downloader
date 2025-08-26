@@ -220,21 +220,35 @@ HTML = fr"""
             transform: scale(1.03);
             box-shadow: 0 4px 12px #111;
         }}
+        
         .settings-btn {{
-            position: absolute;
+            position: fixed;
             right: 24px;
             bottom: 24px;
-            width: 28px;
-            height: 28px;
-            background: none;
+            width: 56px;
+            height: 56px;
+            background: #2ecc71;
             border: none;
+            border-radius: 50%;
             cursor: pointer;
+            box-shadow: 0 4px 16px rgba(46, 204, 113, 0.3);
+            transition: all 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .settings-btn:hover {{
+            background: #27ae60;
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4);
         }}
         .settings-btn img {{
             width: 28px;
             height: 28px;
-            filter: brightness(0.85);
+            filter: brightness(0) invert(1);
         }}
+
         .hidden {{
             display: none;
         }}
@@ -403,7 +417,13 @@ HTML = fr"""
             color: #e5e7eb;
             margin-bottom: 6px;
         }}
-        .video-modal-select {{
+        .custom-select {{
+            position: relative;
+            width: 100%;
+            max-width: 300px;
+            user-select: none;
+        }}
+        .custom-select-header {{
             width: 100%;
             padding: 8px 12px;
             border-radius: 8px;
@@ -411,13 +431,161 @@ HTML = fr"""
             background: #23262f;
             color: #e5e7eb;
             font-size: 15px;
-            margin-bottom: 0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }}
+        .custom-select-header:hover {{
+            border-color: #2ecc71;
+            background: #2b2e37;
+        }}
+        .custom-select-header.active {{
+            border-color: #2ecc71;
+            background: #2b2e37;
+            box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+        }}
+        .custom-select-arrow {{
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #e5e7eb;
+            transition: transform 0.2s ease;
+        }}
+        .custom-select-header.active .custom-select-arrow {{
+            transform: rotate(180deg);
+        }}
+        .custom-select-options {{
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #23262f;
+            border: 1px solid #444;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }}
+        .custom-select-options.show {{
+            display: block;
+        }}
+        .custom-select-option {{
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid #333;
+        }}
+        .custom-select-option:last-child {{
+            border-bottom: none;
+        }}
+        .custom-select-option:hover {{
+            background: #2ecc71;
+            color: #fff;
+        }}
+        .custom-select-option.selected {{
+            background: #2ecc71;
+            color: #fff;
+        }}
+
+
+
+        /* 淺色主題樣式 */
+        body.light-theme {{
+            background: #f5f5f5;
+            color: #333;
+        }}
+        body.light-theme .container {{
+            background: #f5f5f5;
+        }}
+        body.light-theme .sidebar {{
+            background: #ffffff;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+        }}
+        body.light-theme .nav-item {{
+            color: #333;
+        }}
+        body.light-theme .nav-item.selected {{
+            background: #2ecc71;
+            color: #fff;
+        }}
+        body.light-theme .nav-text {{
+            color: #333;
+        }}
+        body.light-theme .nav-item.selected .nav-text {{
+            color: #fff;
+        }}
+        body.light-theme .main {{
+            background: #f5f5f5;
+        }}
+
+        body.light-theme .search-input {{
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }}
+        body.light-theme .search-input:focus {{
+            border-color: #2ecc71;
+        }}
+        body.light-theme .queue-item {{
+            background: #ffffff;
+            color: #333;
+        }}
+        body.light-theme .custom-select-header {{
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }}
+        body.light-theme .custom-select-options {{
+            background: #ffffff;
+            border-color: #ddd;
+        }}
+        body.light-theme .custom-select-option {{
+            color: #333;
+            border-bottom-color: #eee;
+        }}
+        body.light-theme .settings-container {{
+            background: #ffffff;
+            color: #333;
+        }}
+        body.light-theme .settings-input {{
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }}
+        body.light-theme .settings-label {{
+            color: #333;
+        }}
+        body.light-theme .settings-section-title {{
+            color: #333;
+        }}
+        body.light-theme .settings-toggle-text {{
+            color: #333;
+        }}
+        body.light-theme .modal {{
+            background: #ffffff;
+            color: #333;
+        }}
+        body.light-theme .video-modal {{
+            background: #ffffff;
+            color: #333;
+        }}
+        body.light-theme .video-modal-title {{
+            color: #333;
+        }}
+        body.light-theme .video-modal-label {{
+            color: #333;
         }}
         .video-modal-actions {{
             display: flex;
             justify-content: flex-end;
             align-items: center;
-            gap: 12px;
+            gap: 16px;
             padding: 24px 32px 32px 32px;
         }}
         .video-modal-btn {{
@@ -425,12 +593,17 @@ HTML = fr"""
             color: #fff;
             border: none;
             border-radius: 8px;
-            padding: 0 28px;
-            height: 38px;
+            padding: 10px 20px;
+            height: 40px;
             font-size: 16px;
             cursor: pointer;
             font-weight: bold;
             transition: background 0.2s;
+            white-space: nowrap;
+            min-width: 100px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }}
         .video-modal-btn.cancel {{
             background: #444;
@@ -593,6 +766,7 @@ HTML = fr"""
                 <img src="{QUEUE_ICON}" alt="佇列">
                 <span class="nav-text">佇列</span>
             </div>
+
         </div>
         <div class="main">
             <img class="title-img" id="title-img" src="{ICON_TEXT}" alt="">
@@ -600,15 +774,19 @@ HTML = fr"""
                 <input class="search-input" id="video-url" type="text" placeholder="請輸入影片網址...">
                 <button class="download-btn" onclick="downloadVideo()">下載</button>
             </div>
+            
+            <!-- 設定按鈕 - 右下角 -->
             <button class="settings-btn" id="settings-btn" onclick="openSettings()">
                 <img src="{SETTINGS_ICON}" alt="設定">
             </button>
+
             <!-- 佇列頁面改造 -->
             <div class="queue-page" id="queue-page"> <!-- 移除 hidden class，改由 JS 完全控制 -->
                 <div class="queue-list" id="queue-list">
                     <!-- 影片任務將會動態新增到這裡 -->
                 </div>
             </div>
+
         </div>
     </div>
     <!-- 全局載入中遮罩 -->
@@ -639,9 +817,21 @@ HTML = fr"""
                 </div>
                 <div class="video-modal-options">
                     <div class="video-modal-label" id="video-modal-quality-label">影片畫質</div>
-                    <select class="video-modal-select" id="video-modal-quality"></select>
+                    <div class="custom-select" id="quality-select">
+                        <div class="custom-select-header" onclick="toggleSelect('quality-select')">
+                            <span class="custom-select-text">請選擇畫質</span>
+                            <div class="custom-select-arrow"></div>
+                        </div>
+                        <div class="custom-select-options" id="quality-options"></div>
+                    </div>
                     <div class="video-modal-label" style="margin-top:18px;">影片格式</div>
-                    <select class="video-modal-select" id="video-modal-format" onchange="onFormatChange()"></select>
+                    <div class="custom-select" id="format-select">
+                        <div class="custom-select-header" onclick="toggleSelect('format-select')">
+                            <span class="custom-select-text">請選擇格式</span>
+                            <div class="custom-select-arrow"></div>
+                        </div>
+                        <div class="custom-select-options" id="format-options"></div>
+                    </div>
                 </div>
                 <div class="video-modal-actions">
                     <button class="video-modal-btn cancel" onclick="closeVideoModal()">取消</button>
@@ -735,28 +925,28 @@ HTML = fr"""
             // Get all main content elements
             const titleImg = document.getElementById('title-img');
             const searchRow = document.getElementById('search-row');
-            const settingsBtn = document.getElementById('settings-btn');
             const queuePage = document.getElementById('queue-page');
             const queueList = document.getElementById('queue-list'); // Get reference to queue list
+            const settingsBtn = document.getElementById('settings-btn'); // 獲取設定按鈕
 
             if (pageName === 'home') {{
                 document.getElementById('nav-home').classList.add('selected');
                 
-                titleImg.style.display = 'block'; // 顯示主頁元素
-                searchRow.style.display = 'flex';
-                settingsBtn.style.display = 'block';
+                if (titleImg) titleImg.style.display = 'block'; // 顯示主頁元素
+                if (searchRow) searchRow.style.display = 'flex';
+                if (settingsBtn) settingsBtn.style.display = 'block'; // 顯示設定按鈕
                 
-                queuePage.style.display = 'none'; // 隱藏佇列頁面
-                queueList.innerHTML = ''; // 清空佇列列表內容
+                if (queuePage) queuePage.style.display = 'none'; // 隱藏其他頁面
+                if (queueList) queueList.innerHTML = ''; // 清空佇列列表內容
 
             }} else if (pageName === 'queue') {{
                 document.getElementById('nav-queue').classList.add('selected');
                 
-                titleImg.style.display = 'none'; // 隱藏主頁元素
-                searchRow.style.display = 'none';
-                settingsBtn.style.display = 'none';
+                if (titleImg) titleImg.style.display = 'none'; // 隱藏主頁元素
+                if (searchRow) searchRow.style.display = 'none';
+                if (settingsBtn) settingsBtn.style.display = 'none'; // 隱藏設定按鈕
                 
-                queuePage.style.display = 'flex'; // 顯示佇列頁面
+                if (queuePage) queuePage.style.display = 'flex'; // 顯示佇列頁面
                 renderQueue(); // 渲染佇列內容
             }}
         }}
@@ -817,10 +1007,17 @@ HTML = fr"""
         }}
 
         /**
-         * 開啟設定視窗/模態視窗。
+         * 開啟設定視窗。
          */
         function openSettings() {{
-            showModal("提醒", "設定功能尚未實作");
+            window.pywebview.api.open_settings()
+                .then(result => {{
+                    console.log('設定視窗已開啟:', result);
+                }})
+                .catch(error => {{
+                    console.error('開啟設定視窗失敗:', error);
+                    showModal('錯誤', '無法開啟設定視窗');
+                }});
         }}
 
         function showLoading() {{
@@ -850,8 +1047,8 @@ HTML = fr"""
                     try {{ lastVideoInfo = info; }} catch(e) {{}}
 
                     // 畫質選項（由高到低排序）
-                    var sel = document.getElementById('video-modal-quality');
-                    sel.innerHTML = '';
+                    var qualityOptions = document.getElementById('quality-options');
+                    qualityOptions.innerHTML = '';
                     var qualities = (info.qualities || []).slice();
                     qualities.sort(function(a, b) {{
                         // 解析 label 內的數字（如 4K, 1080p, 720p, 480p, 360p）
@@ -863,16 +1060,24 @@ HTML = fr"""
                         return getValue(b) - getValue(a);
                     }});
                     qualities.forEach(function(q) {{
-                        var opt = document.createElement('option');
-                        opt.value = q.label;
-                        opt.innerText = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
-                        if (q.label === '1080p') opt.selected = true;
-                        sel.appendChild(opt);
+                        var optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
+                        optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
+                        if (q.label === '1080p') {{
+                            optionDiv.classList.add('selected');
+                            const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                            if (qualitySelectText) {{
+                                qualitySelectText.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                            }}
+                            currentQuality = q.label;
+                        }}
+                        qualityOptions.appendChild(optionDiv);
                     }});
 
                     // 格式選項（mp4和mp3優先）
-                    var formatSel = document.getElementById('video-modal-format');
-                    formatSel.innerHTML = '';
+                    var formatOptions = document.getElementById('format-options');
+                    formatOptions.innerHTML = '';
                     var formats = (info.formats || []).slice();
                     formats.sort(function(a, b) {{
                         var priority = {{"影片+音訊": 3, "影片": 2, "音訊": 1}};
@@ -882,14 +1087,36 @@ HTML = fr"""
                         return a.value.localeCompare(b.value);
                     }});
                     formats.forEach(function(f) {{
-                        var opt = document.createElement('option');
-                        opt.value = f.value;
-                        opt.innerText = f.label + (f.desc ? ' (' + f.desc + ')' : '');
-                        formatSel.appendChild(opt);
+                        var optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = f.label + (f.desc ? ' (' + f.desc + ')' : '');
+                        optionDiv.onclick = () => selectOption('format-select', f.value, f.label + (f.desc ? ' (' + f.desc + ')' : ''));
+                        if (f.value === 'mp4') {{
+                            optionDiv.classList.add('selected');
+                            const formatSelectText = document.querySelector('#format-select .custom-select-text');
+                            if (formatSelectText) {{
+                                formatSelectText.textContent = f.label + (f.desc ? ' (' + f.desc + ')' : '');
+                            }}
+                            currentFormat = f.value;
+                        }}
+                        formatOptions.appendChild(optionDiv);
                     }});
 
-                    // 觸發格式變更以正確設定畫質/音訊選項
-                    onFormatChange();
+                    // 設定預設值
+                    if (!currentQuality && qualities.length > 0) {{
+                        currentQuality = qualities[0].label;
+                        const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                        if (qualitySelectText) {{
+                            qualitySelectText.textContent = qualities[0].label + (qualities[0].ratio ? ' ' + qualities[0].ratio : '');
+                        }}
+                    }}
+                    if (!currentFormat && formats.length > 0) {{
+                        currentFormat = formats[0].value;
+                        const formatSelectText = document.querySelector('#format-select .custom-select-text');
+                        if (formatSelectText) {{
+                            formatSelectText.textContent = formats[0].label + (formats[0].desc ? ' (' + formats[0].desc + ')' : '');
+                        }}
+                    }}
 
                     // 縮圖處理：如果 info.thumb 不存在或載入失敗，顯示文字
                     const thumbElement = document.getElementById('video-modal-thumb');
@@ -941,42 +1168,166 @@ HTML = fr"""
             }} , 0);
         }}
 
+        // 自定義下拉選單相關變數
+        let currentQuality = '';
+        let currentFormat = '';
+        let isQualitySelectOpen = false;
+        let isFormatSelectOpen = false;
+
+        /**
+         * 切換下拉選單的開關狀態
+         */
+        function toggleSelect(selectId) {{
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            
+            const options = select.querySelector('.custom-select-options');
+            const header = select.querySelector('.custom-select-header');
+            
+            if (!options || !header) return;
+            
+            // 關閉其他下拉選單
+            if (selectId === 'quality-select') {{
+                closeSelect('format-select');
+                closeSelect('theme-select');
+                isQualitySelectOpen = !isQualitySelectOpen;
+                if (isQualitySelectOpen) {{
+                    options.classList.add('show');
+                    header.classList.add('active');
+                }} else {{
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }}
+            }} else if (selectId === 'format-select') {{
+                closeSelect('quality-select');
+                closeSelect('theme-select');
+                isFormatSelectOpen = !isFormatSelectOpen;
+                if (isFormatSelectOpen) {{
+                    options.classList.add('show');
+                    header.classList.add('active');
+                }} else {{
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }}
+            }} else if (selectId === 'theme-select') {{
+                closeSelect('quality-select');
+                closeSelect('format-select');
+                const isThemeSelectOpen = header.classList.contains('active');
+                if (!isThemeSelectOpen) {{
+                    options.classList.add('show');
+                    header.classList.add('active');
+                }} else {{
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }}
+            }}
+        }}
+
+        /**
+         * 關閉指定的下拉選單
+         */
+        function closeSelect(selectId) {{
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            
+            const options = select.querySelector('.custom-select-options');
+            const header = select.querySelector('.custom-select-header');
+            
+            if (!options || !header) return;
+            
+            options.classList.remove('show');
+            header.classList.remove('active');
+            
+            if (selectId === 'quality-select') {{
+                isQualitySelectOpen = false;
+            }} else if (selectId === 'format-select') {{
+                isFormatSelectOpen = false;
+            }}
+        }}
+
+        /**
+         * 選擇下拉選單選項
+         */
+        function selectOption(selectId, value, text) {{
+            const select = document.getElementById(selectId);
+            const headerText = select.querySelector('.custom-select-text');
+            const options = select.querySelectorAll('.custom-select-option');
+            
+            // 移除所有選項的選中狀態
+            options.forEach(option => option.classList.remove('selected'));
+            
+            // 為當前選擇的選項添加選中狀態
+            const selectedOption = Array.from(options).find(option => 
+                option.textContent === text
+            );
+            if (selectedOption) {{
+                selectedOption.classList.add('selected');
+            }}
+            
+            headerText.textContent = text;
+            
+            if (selectId === 'quality-select') {{
+                currentQuality = value;
+                closeSelect('quality-select');
+            }} else if (selectId === 'format-select') {{
+                currentFormat = value;
+                closeSelect('format-select');
+                onFormatChange();
+            }}
+        }}
+
         /**
          * 處理影片格式選擇的變更。
          * 根據選擇的影片或音訊格式調整畫質選項。
          */
         function onFormatChange() {{
-            const formatSelect = document.getElementById('video-modal-format');
-            const qualitySelect = document.getElementById('video-modal-quality');
+            const qualityOptions = document.getElementById('quality-options');
             const qualityLabel = document.getElementById('video-modal-quality-label');
             const audioTypes = ["mp3", "aac", "flac", "wav"];
 
-            if (audioTypes.includes(formatSelect.value)) {{
+            if (audioTypes.includes(currentFormat)) {{
                 // 如果是音訊格式，顯示音訊品質
-                qualitySelect.innerHTML = '';
+                qualityOptions.innerHTML = '';
                 AUDIO_QUALITIES.forEach(q => {{
-                    const opt = document.createElement('option');
-                    opt.value = q.value;
-                    opt.innerText = q.label;
-                    qualitySelect.appendChild(opt);
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'custom-select-option';
+                    optionDiv.textContent = q.label;
+                    optionDiv.onclick = () => selectOption('quality-select', q.value, q.label);
+                    // 設定預設選中320kbps
+                    if (q.value === "320") {{
+                        optionDiv.classList.add('selected');
+                    }}
+                    qualityOptions.appendChild(optionDiv);
                 }});
-                qualitySelect.value = "320"; // 預設音訊品質
+                currentQuality = "320"; // 預設音訊品質
+                const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                if (qualitySelectText) {{
+                    qualitySelectText.textContent = "320kbps";
+                }}
                 qualityLabel.innerText = "音質";
             }} else {{
                 // 如果是影片格式，從 lastVideoInfo 還原影片畫質
                 if (lastVideoInfo && lastVideoInfo.qualities) {{
-                    qualitySelect.innerHTML = '';
+                    qualityOptions.innerHTML = '';
                     let sortedQualities = sortQualities(lastVideoInfo.qualities);
+                    let defaultSet = false;
                     sortedQualities.forEach(q => {{
-                        const opt = document.createElement('option');
-                        opt.value = q.label;
-                        opt.innerText = q.label + (q.ratio ? ' ' + q.ratio : '');
-                        qualitySelect.appendChild(opt);
+                        const optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                        optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
+                        // 設定預設選中1080p，如果沒有1080p則選第一個
+                        if (q.label === "1080p" || (!defaultSet && sortedQualities.indexOf(q) === 0)) {{
+                            optionDiv.classList.add('selected');
+                            currentQuality = q.label;
+                            const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                            if (qualitySelectText) {{
+                                qualitySelectText.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                            }}
+                            defaultSet = true;
+                        }}
+                        qualityOptions.appendChild(optionDiv);
                     }});
-                    // 還原原始預設或第一個選項
-                    const default1080p = Array.from(qualitySelect.options).find(o => o.value === "1080p");
-                    if (default1080p) qualitySelect.value = "1080p";
-                    else if (qualitySelect.options.length > 0) qualitySelect.selectedIndex = 0;
                 }}
                 qualityLabel.innerText = "影片畫質";
             }}
@@ -989,8 +1340,8 @@ HTML = fr"""
         async function confirmDownload() {{
             const urlInput = document.getElementById('video-url');
             const url = urlInput.value.trim();
-            const quality = document.getElementById('video-modal-quality').value;
-            const format = document.getElementById('video-modal-format').value;
+            const quality = currentQuality;
+            const format = currentFormat;
 
             closeVideoModal(); // 關閉影片選擇模態視窗
 
@@ -1151,6 +1502,27 @@ HTML = fr"""
                 }});
         }}
 
+
+
+
+
+        // 點擊外部關閉下拉選單
+        document.addEventListener('click', function(event) {{
+            const qualitySelect = document.getElementById('quality-select');
+            const formatSelect = document.getElementById('format-select');
+            
+            // 只有在影片選擇模態視窗才處理畫質和格式選擇的關閉
+            const videoModal = document.getElementById('video-modal-bg');
+            if (videoModal && videoModal.classList.contains('show')) {{
+                if (qualitySelect && !qualitySelect.contains(event.target)) {{
+                    closeSelect('quality-select');
+                }}
+                if (formatSelect && !formatSelect.contains(event.target)) {{
+                    closeSelect('format-select');
+                }}
+            }}
+        }});
+
         // 首次載入時，確保顯示主頁
         document.addEventListener('DOMContentLoaded', () => {{
             showPage('home');
@@ -1160,24 +1532,7 @@ HTML = fr"""
 </html>
 """
 
-# 將 HTML 寫入 main.html
-main_html_path = os.path.join(ROOT_DIR, "main.html")
-
-# 檢查檔案是否存在，如果存在則刪除
-if os.path.exists(main_html_path):
-    try:
-        os.remove(main_html_path)
-        info_console(f"已刪除現有的 main.html 檔案: {main_html_path}")
-    except OSError as e:
-        error_console(f"刪除 main.html 檔案時出錯: {e}")
-
-# 寫入 HTML
-try:
-    with open(main_html_path, "w", encoding="utf-8") as f:
-        f.write(HTML)
-    debug_console(f"HTML已寫入: {main_html_path}")
-except IOError as e:
-    error_console(f"寫入 main.html 檔案時出錯: {e}")
+# HTML寫入邏輯移到 main 區塊中，避免重複執行
 
 class Api(QObject):
     # 從背景執行緒安全地要求在主執行緒執行 JS
@@ -1190,6 +1545,7 @@ class Api(QObject):
         self.download_threads = {} # 用於儲存下載執行緒
         self.eval_js_requested.connect(self._on_eval_js_requested)
         self.completed_tasks = set()
+        self._lock = threading.Lock() # 添加線程鎖
 
     def _extract_video_info(self, url):
         ydl_opts = {
@@ -1278,7 +1634,8 @@ class Api(QObject):
                 return 'file:///' + local_path.replace('\\', '/')
             except Exception as e:
                 debug_console(f"縮圖快取失敗: {e}")
-                return ''
+                # 如果快取失敗，返回原始URL作為後備方案
+                return thumb_url or ''
         thumb_local = cache_thumb(thumb)
 
         return {
@@ -1308,14 +1665,23 @@ class Api(QObject):
 
     @Slot(str)
     def _on_eval_js_requested(self, script):
-        self.page.runJavaScript(script)
+        try:
+            self.page.runJavaScript(script)
+        except Exception as e:
+            debug_console(f"JavaScript執行失敗: {e}")
+            # 記錄失敗但不中斷程式執行
 
     def _download_progress_hook(self, d):
         """
         yt-dlp 的進度回調函數。
         將進度更新發送到前端。
         """
-        task_id = d['task_id'] # 從下載選項中獲取任務ID
+        # 安全獲取 task_id，避免 KeyError
+        task_id = d.get('task_id')
+        if task_id is None:
+            debug_console("警告：進度回調中缺少 task_id")
+            return
+            
         if d['status'] == 'downloading':
             # 計算下載百分比
             if d.get('total_bytes'):
@@ -1344,8 +1710,20 @@ class Api(QObject):
             self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{filepath.replace(os.sep, '/')}')") # 將路徑傳遞給前端
             end_progress_line()
             info_console(f"任務 {task_id}: 下載完成 - {d['filename']}")
+            
+            # 檢查是否啟用通知
             try:
-                self.completed_tasks.add(task_id)
+                settings = self.load_settings()
+                if settings.get('enableNotifications', True):
+                    # 移除彈窗通知，只保留控制台輸出
+                    info_console(f"影片下載完成：{d.get('filename', '未知檔案')}")
+            except Exception as e:
+                debug_console(f"處理下載完成狀態失敗: {e}")
+            
+            # 線程安全的添加完成任務
+            try:
+                with self._lock:
+                    self.completed_tasks.add(task_id)
             except Exception:
                 pass
         elif d['status'] == 'error':
@@ -1368,9 +1746,32 @@ class Api(QObject):
 
     @Slot(result=str)
     def open_settings(self):
+        """打開設定視窗"""
         debug_console("設定按鈕被點擊")
-        info_console("開啟設定視窗（尚未實作）")
-        return "設定功能尚未實作"
+        try:
+            import subprocess
+            import sys
+            import os
+            
+            # 獲取設定檔路徑
+            settings_path = os.path.join(ROOT_DIR, 'settings.pyw')
+            
+            if os.path.exists(settings_path):
+                # 使用當前Python環境啟動設定視窗
+                python_exe = os.path.join(ROOT_DIR, 'python_embed', 'python.exe')
+                if not os.path.exists(python_exe):
+                    python_exe = sys.executable
+                
+                subprocess.Popen([python_exe, settings_path], cwd=ROOT_DIR)
+                info_console("設定視窗已開啟")
+                return "設定視窗已開啟"
+            else:
+                error_console(f"設定檔案不存在: {settings_path}")
+                return "設定檔案不存在"
+                
+        except Exception as e:
+            error_console(f"開啟設定視窗失敗: {e}")
+            return f"開啟設定視窗失敗: {e}"
 
     @Slot(str, result='QVariant')
     def get_video_info(self, url):
@@ -1384,7 +1785,8 @@ class Api(QObject):
                 'quiet': True,
                 'simulate': True,
                 'force_generic_extractor': True,
-                'format': 'bestvideo+bestaudio/best', # 獲取所有格式以便分析
+                # 改進format參數，避免嘗試下載不可用的格式
+                'format': 'best[height<=1080]/bestaudio/best',
                 'ffmpeg_location': FFMPEG, # 明確指定 ffmpeg 路徑
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1422,7 +1824,15 @@ class Api(QObject):
             # 檢查是否存在音訊流
             has_any_audio = False
 
-            for f in info_dict.get('formats', []):
+            # 改進格式分析，只處理可用的格式
+            available_formats = info_dict.get('formats', [])
+            debug_console(f"找到 {len(available_formats)} 個可用格式")
+            
+            for f in available_formats:
+                # 跳過明顯不可用的格式
+                if f.get('filesize') == 0 or f.get('filesize') is None:
+                    continue
+                    
                 # 影片畫質
                 if f.get('vcodec') != 'none' and f.get('height'):
                     label = f"{f['height']}p"
@@ -1458,7 +1868,6 @@ class Api(QObject):
                 formats.append({"value": "mp4", "label": "mp4", "desc": "影片+音訊"})
             if has_mp3_audio or has_any_audio:
                 formats.append({"value": "mp3", "label": "mp3", "desc": "音訊"})
-
 
             # 格式排序：優先級 (影片+音訊 > 音訊)，然後按擴展名字母順序
             def format_sort_key(f):
@@ -1513,8 +1922,12 @@ class Api(QObject):
         """
         debug_console(f"接收到下載請求: 任務ID={task_id}, URL={url}, 畫質={quality}, 格式={format_type}")
         
-        # 確保下載目錄存在
-        download_dir = os.path.join(ROOT_DIR, 'downloads')
+        # 確保下載目錄存在，使用設定中的路徑
+        try:
+            settings = self.load_settings()
+            download_dir = settings.get('downloadPath', os.path.join(ROOT_DIR, 'downloads'))
+        except:
+            download_dir = os.path.join(ROOT_DIR, 'downloads')
         os.makedirs(download_dir, exist_ok=True)
 
         ydl_opts = {
@@ -1537,10 +1950,13 @@ class Api(QObject):
             # 只根據畫質選擇 mp4 格式，讓 yt-dlp 自動合併
             try:
                 height = int(quality.replace("p", "").replace("K", "000"))
-            except Exception:
+                if height <= 0:
+                    height = 1080
+            except (ValueError, AttributeError) as e:
+                debug_console(f"畫質解析失敗: {e}，使用預設值1080")
                 height = 1080
-            # 讓 yt-dlp 自動選擇最佳影片與音訊並合併為 mp4；指定畫質高度偏好
-            ydl_opts['format'] = f'(bestvideo[height<={height}]+bestaudio/best)[protocol!*=dash]/best'
+            # 改進format參數，使用更安全的選擇邏輯
+            ydl_opts['format'] = f'best[height<={height}][ext=mp4]/best[height<={height}]/best'
             ydl_opts['merge_output_format'] = 'mp4'
             postprocessors.append({
                 'key': 'FFmpegVideoConvertor',
@@ -1557,7 +1973,7 @@ class Api(QObject):
             })
         else:
             # 默認情況，或者處理其他格式
-            ydl_opts['format'] = 'bestvideo+bestaudio/best'
+            ydl_opts['format'] = 'best[ext=mp4]/best'
             # 這裡可以添加其他格式的 postprocessors
 
         ydl_opts['postprocessors'] = postprocessors
@@ -1573,14 +1989,21 @@ class Api(QObject):
                     debug_console(f"【任務{task_id}】yt-dlp.download() 結束了！")
             except Exception as e:
                 error_console(f"下載任務 {task_id} 失敗: {e}")
-                error_msg = str(e).replace("'", "\\'");
+                # 安全轉義錯誤訊息，避免JavaScript注入
+                import json
+                try:
+                    error_msg = json.dumps(str(e))
+                except:
+                    error_msg = json.dumps("未知錯誤")
                 self._eval_js(
-                    f"window.updateDownloadProgress({task_id}, 0, '錯誤', '下載失敗: {error_msg}');"
+                    f"window.updateDownloadProgress({task_id}, 0, '錯誤', '下載失敗: ' + {error_msg});"
                 )
             finally:
                 # 防止未回報導致前端停在下載中；若已完成則不覆蓋
+                # 線程安全的檢查完成狀態
                 try:
-                    already_done = task_id in getattr(self, 'completed_tasks', set())
+                    with self._lock:
+                        already_done = task_id in self.completed_tasks
                 except Exception:
                     already_done = False
                 if not already_done:
@@ -1589,9 +2012,16 @@ class Api(QObject):
                     )
 
         # 在單獨的執行緒中啟動下載
-        download_thread = threading.Thread(target=_download_task);
-        download_thread.start();
+        download_thread = threading.Thread(target=_download_task, daemon=True)
+        download_thread.start()
         self.download_threads[task_id] = download_thread  # 儲存執行緒引用
+        
+        # 清理已完成的執行緒引用
+        with self._lock:
+            completed_threads = [tid for tid, thread in self.download_threads.items() 
+                               if not thread.is_alive()]
+            for tid in completed_threads:
+                del self.download_threads[tid]
 
         info_console(f"下載任務 {task_id} 已啟動 (URL: {url}, 畫質: {quality}, 格式: {format_type})")
         return f"下載任務 {task_id} 已啟動，請查看佇列頁面。"
@@ -1630,6 +2060,103 @@ class Api(QObject):
         except Exception as e:
             error_console(f"開啟檔案位置時出錯: {e}")
             return f"開啟檔案位置失敗: {e}"
+
+    @Slot(result='QVariant')
+    def load_settings(self):
+        """
+        載入設定檔
+        """
+        debug_console("載入設定檔")
+        try:
+            settings_path = os.path.join(ROOT_DIR, 'settings.json')
+            default_settings = {
+                'downloadPath': os.path.join(ROOT_DIR, 'downloads'),
+                'enableNotifications': True,
+                'theme': 'dark'
+            }
+            
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    # 合併預設設定，確保所有欄位都存在
+                    merged_settings = {**default_settings, **settings}
+                    info_console("設定檔載入成功")
+                    return merged_settings
+            else:
+                info_console("設定檔不存在，使用預設設定")
+                return default_settings
+                
+        except Exception as e:
+            error_console(f"載入設定檔失敗: {e}")
+            return {
+                'downloadPath': os.path.join(ROOT_DIR, 'downloads'),
+                'enableNotifications': True,
+                'theme': 'dark'
+            }
+
+    @Slot('QVariant', result=str)
+    def save_settings(self, settings):
+        """
+        儲存設定檔
+        """
+        debug_console(f"儲存設定檔: {settings}")
+        try:
+            settings_path = os.path.join(ROOT_DIR, 'settings.json')
+            with open(settings_path, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+            info_console("設定檔儲存成功")
+            return "設定已儲存"
+            
+        except Exception as e:
+            error_console(f"儲存設定檔失敗: {e}")
+            return f"儲存設定失敗: {e}"
+
+    @Slot(result=str)
+    def select_download_path(self):
+        """
+        選擇下載路徑
+        """
+        debug_console("選擇下載路徑")
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            
+            # 使用資料夾選擇對話框
+            folder = QFileDialog.getExistingDirectory(
+                None,
+                "選擇下載資料夾",
+                os.path.join(ROOT_DIR, 'downloads')
+            )
+            
+            if folder:
+                info_console(f"選擇的下載路徑: {folder}")
+                return folder
+            else:
+                debug_console("使用者取消選擇路徑")
+                return ""
+                
+        except Exception as e:
+            error_console(f"選擇下載路徑失敗: {e}")
+            return ""
+
+    def show_notification(self, title, message):
+        """
+        顯示桌面通知
+        """
+        debug_console(f"顯示通知: {title} - {message}")
+        try:
+            if os.name == 'nt':  # Windows
+                import win32gui
+                import win32con
+                # 使用Windows API顯示通知
+                win32gui.MessageBox(0, message, title, win32con.MB_ICONINFORMATION | win32con.MB_TOPMOST)
+            else:
+                # Linux/macOS 可以使用其他通知方式
+                info_console(f"通知: {title} - {message}")
+                
+        except Exception as e:
+            error_console(f"顯示通知失敗: {e}")
+            # 如果通知失敗，至少在控制台顯示
+            info_console(f"通知: {title} - {message}")
 
 # 創建 pywebview 視窗
 if __name__ == '__main__':
@@ -1670,15 +2197,21 @@ if __name__ == '__main__':
     def on_info_ready(info):
         # 直接呼叫前端處理流程：這裡模擬 window.pywebview.api.get_video_info 的 then
         # 方案：將 info 暫存到 window.__lastVideoInfo 並觸發一個自定事件
-        payload = json.dumps(info).replace("'", "\\'")
-        view.page().runJavaScript(
-            "(function(){ window.__lastVideoInfo = " + payload + "; if (window.__onVideoInfo){ window.__onVideoInfo(window.__lastVideoInfo); } })();"
-        )
+        try:
+            payload = json.dumps(info)
+            view.page().runJavaScript(
+                "(function(){ window.__lastVideoInfo = " + payload + "; if (window.__onVideoInfo){ window.__onVideoInfo(window.__lastVideoInfo); } })();"
+            )
+        except Exception as e:
+            debug_console(f"資訊回傳失敗: {e}")
     def on_info_error(msg):
-        safe = str(msg).replace("'", "\\'")
-        view.page().runJavaScript(
-            f"(function(){{ if (window.__onVideoInfoError){{ window.__onVideoInfoError('{safe}'); }} }})();"
-        )
+        try:
+            safe = json.dumps(str(msg))
+            view.page().runJavaScript(
+                f"(function(){{ if (window.__onVideoInfoError){{ window.__onVideoInfoError({safe}); }} }})();"
+            )
+        except Exception as e:
+            debug_console(f"錯誤回傳失敗: {e}")
     api.infoReady.connect(on_info_ready)
     api.infoError.connect(on_info_error)
 
