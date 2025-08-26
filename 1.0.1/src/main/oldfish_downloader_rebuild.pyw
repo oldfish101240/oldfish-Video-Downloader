@@ -12,28 +12,43 @@ import concurrent.futures
 import winsound
 import time
 
-# 設定日誌
+# 設定日誌，修正格式化錯誤
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# 優化 get_assets_dir，使用緩存避免重複計算
+_assets_dir_cache = None
 def get_assets_dir():
     """取得 assets 資料夾的路徑，支援 exe 環境"""
-    if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
-        return os.path.join(os.path.dirname(sys.executable), "assets")
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+    global _assets_dir_cache
+    if _assets_dir_cache is None:
+        try:
+            if getattr(sys, 'frozen', False):  # 判斷是否為打包後的 .exe
+                _assets_dir_cache = os.path.join(os.path.dirname(sys.executable), "assets")
+            else:
+                _assets_dir_cache = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+        except Exception as e:
+            logging.error(f"無法取得 assets 資料夾路徑：{e}")
+            _assets_dir_cache = ""
+    return _assets_dir_cache
 
+# 改進 show_message_box，減少重複的路徑計算
 def show_message_box(parent, title, text, icon=QMessageBox.Icon.Information, close_parent=False):
     """通用的訊息框，套用 icon.ico，並根據參數決定是否關閉父視窗"""
-    assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
-    msg_box = QMessageBox(parent)
-    msg_box.setWindowIcon(QIcon(os.path.join(assets_dir, "icon.ico")))  # 使用 icon.ico
-    msg_box.setWindowTitle(title)
-    msg_box.setText(text)
-    msg_box.setIcon(icon)
-    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-    msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
-    if msg_box.exec() == QMessageBox.StandardButton.Ok and close_parent:
-        parent.close()  # 按下 OK 時關閉父視窗（僅當 close_parent 為 True 時）
+    try:
+        assets_dir = get_assets_dir()  # 使用通用方法取得 assets 資料夾路徑
+        msg_box = QMessageBox(parent)
+        msg_box.setWindowIcon(QIcon(os.path.join(assets_dir, "icon.ico")))  # 使用 icon.ico
+        msg_box.setWindowTitle(title)
+        msg_box.setText(text)
+        msg_box.setIcon(icon)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)  # 設定視窗置頂
+        if msg_box.exec() == QMessageBox.StandardButton.Ok and close_parent:
+            parent.close()  # 按下 OK 時關閉父視窗（僅當 close_parent 為 True 時）
+    except Exception as e:
+        logging.error(f"顯示訊息框時發生錯誤：{e}")
 
+# 優化 DownloadWorker 的 run 方法，減少不必要的 I/O 操作
 class DownloadWorker(QThread):
     progress_updated = pyqtSignal(int, float, float)  # percent, bytes_received, speed
     download_finished = pyqtSignal()
@@ -52,30 +67,31 @@ class DownloadWorker(QThread):
 
         while retry_count < max_retries:
             try:
-                response = requests.get(self.url, stream=True, timeout=10)
-                total_size = int(response.headers.get('content-length', 0))
-                bytes_received = 0
-                start_time = time.time()
+                with requests.get(self.url, stream=True, timeout=10) as response:
+                    response.raise_for_status()  # 檢查 HTTP 狀態碼
+                    total_size = int(response.headers.get('content-length', 0))
+                    bytes_received = 0
+                    start_time = time.time()
 
-                with open(self.output_path, 'wb') as file:
-                    for chunk in response.iter_content(chunk_size=1024):
-                        if self.cancel_callback():
-                            # 刪除部分下載的檔案
-                            file.close()  # 確保檔案已關閉
-                            if os.path.exists(self.output_path):
-                                os.remove(self.output_path)
-                            return
-                        file.write(chunk)
-                        bytes_received += len(chunk)
-                        elapsed_time = time.time() - start_time
-                        speed = bytes_received / elapsed_time if elapsed_time > 0 else 0
-                        percent = int(bytes_received * 100 / total_size) if total_size > 0 else 0
+                    with open(self.output_path, 'wb') as file:
+                        for chunk in response.iter_content(chunk_size=1024):
+                            if self.cancel_callback():
+                                # 刪除部分下載的檔案
+                                file.close()  # 確保檔案已關閉
+                                if os.path.exists(self.output_path):
+                                    os.remove(self.output_path)
+                                return
+                            file.write(chunk)
+                            bytes_received += len(chunk)
+                            elapsed_time = time.time() - start_time
+                            speed = bytes_received / elapsed_time if elapsed_time > 0 else 0
+                            percent = int(bytes_received * 100 / total_size) if total_size > 0 else 0
 
-                        # 每秒更新一次進度
-                        current_time = time.time()
-                        if current_time - self.last_update_time >= 1:
-                            self.progress_updated.emit(percent, bytes_received, speed)
-                            self.last_update_time = current_time
+                            # 每秒更新一次進度
+                            current_time = time.time()
+                            if current_time - self.last_update_time >= 1:
+                                self.progress_updated.emit(percent, bytes_received, speed)
+                                self.last_update_time = current_time
 
                 self.download_finished.emit()
                 return  # 成功下載後退出
@@ -92,15 +108,19 @@ class DownloadWorker(QThread):
 
     def _notify_user_and_exit(self):
         """提醒用戶重新啟動程式，並結束程式"""
-        assets_dir = get_assets_dir()
-        msg_box = QMessageBox()
-        msg_box.setWindowIcon(QIcon(os.path.join(assets_dir, "icon.ico")))  # 使用 icon.ico
-        msg_box.setIcon(QMessageBox.Icon.Critical)
-        msg_box.setWindowTitle("下載失敗")
-        msg_box.setText("伺服器超時或其他錯誤，請重新啟動程式。")
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.exec()
-        sys.exit()
+        try:
+            assets_dir = get_assets_dir()
+            msg_box = QMessageBox()
+            msg_box.setWindowIcon(QIcon(os.path.join(assets_dir, "icon.ico")))  # 使用 icon.ico
+            msg_box.setIcon(QMessageBox.Icon.Critical)
+            msg_box.setWindowTitle("下載失敗")
+            msg_box.setText("伺服器超時或其他錯誤，請重新啟動程式。")
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
+        except Exception as e:
+            logging.error(f"通知用戶時發生錯誤：{e}")
+        finally:
+            sys.exit()
 
 
 class Installer(QWidget):
@@ -232,26 +252,72 @@ class Installer(QWidget):
             self.speed_label.setText(f"速度：{speed:.2f} B/s")
 
     def on_download_finished(self):
-        # 解壓縮並完成安裝
+        """解壓縮並完成安裝"""
         try:
-            with zipfile.ZipFile(self.ffmpeg_zip, 'r') as zip_ref:
-                zip_ref.extractall(self.ffmpeg_extract_dir)
-            os.remove(self.ffmpeg_zip)
-            winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
-            show_message_box(self, '安裝完成', 'FFmpeg 安裝完成，請重新啟動此程式。', QMessageBox.Icon.Information)
-            self.installation_finished.emit()
-            self.close()
+            self.progress_label.setText("正在解壓縮...")  # 更新標籤文字
+            self.progress_bar.setValue(0)  # 初始化進度條
+            self.progress_bar.setRange(0, 100)  # 設定進度條範圍
+
+            # 設定解壓縮檔案大小
+            total_size = os.path.getsize(self.ffmpeg_zip) / (1024 * 1024)  # 轉換為 MB
+            self.size_label.setText(f"0.00 MB / {total_size:.2f} MB")  # 初始化檔案大小標籤
+            self.speed_label.setText("")  # 清空速度標籤
+
+            # 啟動解壓縮執行緒
+            self.unzip_thread = UnzipWorker(self.ffmpeg_zip, self.ffmpeg_extract_dir)
+            self.unzip_thread.progress_updated.connect(self._update_unzip_progress_ui)
+            self.unzip_thread.finished.connect(self.on_unzip_finished)
+            self.unzip_thread.start()
         except Exception as e:
             show_message_box(self, '錯誤', f'解壓縮失敗：{e}', QMessageBox.Icon.Critical)
+
+    def _update_unzip_progress_ui(self, percent, bytes_processed, speed):
+        """更新解壓縮進度條與速度標籤"""
+        self.progress_bar.setValue(percent)
+        self.progress_bar.setFormat(f"{percent}%")  # 顯示百分比文字
+        total_size = os.path.getsize(self.ffmpeg_zip) / (1024 * 1024)  # 轉換為 MB
+        self.size_label.setText(f"{bytes_processed / (1024 * 1024):.2f} MB / {total_size:.2f} MB")  # 更新檔案大小標籤
+
+        # 更新解壓縮速度
+        if speed > 1024 * 1024:
+            self.speed_label.setText(f"速度：{speed / (1024 * 1024):.2f} MB/s")
+        elif speed > 1024:
+            self.speed_label.setText(f"速度：{speed / 1024:.2f} KB/s")
+        else:
+            self.speed_label.setText(f"速度：{speed:.2f} B/s")
+
+    def on_unzip_finished(self, success):
+        """解壓縮完成後的處理"""
+        if success:
+            try:
+                os.remove(self.ffmpeg_zip)  # 刪除壓縮檔
+                winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
+                show_message_box(self, '安裝完成', 'FFmpeg 安裝完成，請重新啟動此程式。', QMessageBox.Icon.Information)
+                self.installation_finished.emit()
+                self.close()
+            except Exception as e:
+                show_message_box(self, '錯誤', f'清理檔案失敗：{e}', QMessageBox.Icon.Critical)
+        else:
+            show_message_box(self, '錯誤', '解壓縮過程中發生錯誤。', QMessageBox.Icon.Critical)
 
     def on_download_failed(self, error_message):
         show_message_box(self, '錯誤', f'下載失敗：{error_message}', QMessageBox.Icon.Critical)
         self.cleanup_partial_download()
 
     def cancel_download(self):
-        self.cancel_flag = True
-        self.cleanup_partial_download()
-        sys.exit()
+        """取消下載時顯示確認視窗，並繼續下載直到用戶確認"""
+        reply = QMessageBox.question(
+            self,
+            "確認取消",
+            "安裝還正在運行，確定取消？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.cancel_flag = True
+            self.cleanup_partial_download()
+            sys.exit()
+        # 如果用戶選擇 "No"，下載繼續進行，無需其他操作
 
     def cleanup_partial_download(self):
         # 刪除部分下載的文件
@@ -261,6 +327,39 @@ class Installer(QWidget):
                 os.remove(self.ffmpeg_zip)
         except Exception as e:
             pass
+
+
+class UnzipWorker(QThread):
+    """解壓縮執行緒，逐步更新進度與速度"""
+    progress_updated = pyqtSignal(int, float, float)  # percent, bytes_processed, speed
+    finished = pyqtSignal(bool)
+
+    def __init__(self, zip_path, extract_dir):
+        super().__init__()
+        self.zip_path = zip_path
+        self.extract_dir = extract_dir
+
+    def run(self):
+        try:
+            with zipfile.ZipFile(self.zip_path, 'r') as zip_ref:
+                total_files = len(zip_ref.namelist())
+                total_size = sum(zinfo.file_size for zinfo in zip_ref.infolist())  # 總解壓縮大小
+                bytes_processed = 0
+                start_time = time.time()
+
+                for i, file in enumerate(zip_ref.namelist(), start=1):
+                    zinfo = zip_ref.getinfo(file)
+                    zip_ref.extract(file, self.extract_dir)
+                    bytes_processed += zinfo.file_size
+                    elapsed_time = time.time() - start_time
+                    speed = bytes_processed / elapsed_time if elapsed_time > 0 else 0
+                    percent = int((bytes_processed / total_size) * 100) if total_size > 0 else 0
+                    self.progress_updated.emit(percent, bytes_processed, speed)
+
+            self.finished.emit(True)
+        except Exception as e:
+            logging.error(f"解壓縮失敗：{e}")
+            self.finished.emit(False)
 
 
 class VideoInfoLoaderThread(QThread):
@@ -811,7 +910,7 @@ class SettingsDialog(QDialog):
         about_layout = QVBoxLayout()
         title_label = QLabel("oldfish Video Downloader")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")  # 放大字體
-        version_label = QLabel("應用程式版本: 1.0.0")
+        version_label = QLabel("應用程式版本: 1.0.1")
         author_label = QLabel("作者: 老魚oldfish")
         link_label = QLabel('<a href="https://github.com/oldfish101240/oldfish-Video-Downloader">前往GitHub頁面</a>')
         link_label.setOpenExternalLinks(True)  # 啟用外部連結

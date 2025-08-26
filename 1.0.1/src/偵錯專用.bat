@@ -32,5 +32,5 @@
 ::
 ::978f952a14a936cc963da21a135fa983
 @echo off
-"%~dp0python_embed\pythonw.exe" "%~dp0main\oldfish_downloader_rebuild.pyw"
+"%~dp0python_embed\python.exe" "%~dp0main\oldfish_downloader_rebuild.pyw"
 pause

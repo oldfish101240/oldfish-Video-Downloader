@@ -1,0 +1,5 @@
+Launcher started.
+Attempting to execute: ".\python_embed\pythonw.exe" ".\main\oldfish_downloader_rebuild.pyw"
+Process created with PID: 12556
+Child process (PID: 12556) finished.
+Launcher finished.
