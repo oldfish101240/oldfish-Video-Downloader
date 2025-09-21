@@ -549,24 +549,6 @@ HTML = fr"""
             color: #333;
             border-bottom-color: #eee;
         }}
-        body.light-theme .settings-container {{
-            background: #ffffff;
-            color: #333;
-        }}
-        body.light-theme .settings-input {{
-            background: #ffffff;
-            border-color: #ddd;
-            color: #333;
-        }}
-        body.light-theme .settings-label {{
-            color: #333;
-        }}
-        body.light-theme .settings-section-title {{
-            color: #333;
-        }}
-        body.light-theme .settings-toggle-text {{
-            color: #333;
-        }}
         body.light-theme .modal {{
             background: #ffffff;
             color: #333;
@@ -1007,7 +989,7 @@ HTML = fr"""
         }}
 
         /**
-         * 開啟設定視窗。
+         * 開啟設定視窗
          */
         function openSettings() {{
             window.pywebview.api.open_settings()
@@ -1545,6 +1527,7 @@ class Api(QObject):
         self.download_threads = {} # 用於儲存下載執行緒
         self.eval_js_requested.connect(self._on_eval_js_requested)
         self.completed_tasks = set()
+        self.settings_process = None  # 追蹤設定視窗進程（單一進程）
         self._lock = threading.Lock() # 添加線程鎖
 
     def _extract_video_info(self, url):
@@ -1700,6 +1683,8 @@ class Api(QObject):
 
         elif d['status'] == 'finished':
             # 下載完成
+            debug_console(f"【任務{task_id}】檢測到下載完成狀態: {d}")
+            
             # yt-dlp 在 finished 狀態下會提供最終檔案路徑
             filepath = d.get('filepath', '')
             if not filepath: # 備用方案，如果 filepath 不存在
@@ -1707,18 +1692,43 @@ class Api(QObject):
                 if filename:
                     filepath = os.path.join(ROOT_DIR, 'downloads', filename)
             
+            debug_console(f"【任務{task_id}】最終檔案路徑: {filepath}")
+            
             self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{filepath.replace(os.sep, '/')}')") # 將路徑傳遞給前端
             end_progress_line()
             info_console(f"任務 {task_id}: 下載完成 - {d['filename']}")
             
-            # 檢查是否啟用通知
+            # 下載完成通知
+            debug_console(f"【任務{task_id}】開始處理下載完成通知")
             try:
                 settings = self.load_settings()
+                debug_console(f"【任務{task_id}】載入設定: {settings}")
+                debug_console(f"【任務{task_id}】下載完成通知設定檢查: enableNotifications = {settings.get('enableNotifications', True)}")
+                
                 if settings.get('enableNotifications', True):
-                    # 移除彈窗通知，只保留控制台輸出
-                    info_console(f"影片下載完成：{d.get('filename', '未知檔案')}")
+                    filename = d.get('filename', '未知檔案')
+                    # 只提取檔案名稱，不包含路徑
+                    if os.path.sep in filename:
+                        filename = os.path.basename(filename)
+                    
+                    title = "下載完成"
+                    message = f"影片已成功下載：{filename}"
+                    debug_console(f"【任務{task_id}】準備發送通知: {title} - {message}")
+                    
+                    # 強制發送通知
+                    debug_console(f"【任務{task_id}】調用show_notification方法")
+                    self.show_notification(title, message)
+                    debug_console(f"【任務{task_id}】show_notification方法調用完成")
+                    
+                    info_console(f"影片下載完成：{filename}")
+                else:
+                    debug_console(f"【任務{task_id}】通知已停用，跳過通知")
             except Exception as e:
-                debug_console(f"處理下載完成狀態失敗: {e}")
+                debug_console(f"【任務{task_id}】處理下載完成通知失敗: {e}")
+                import traceback
+                debug_console(f"【任務{task_id}】錯誤詳情: {traceback.format_exc()}")
+                filename = d.get('filename', '未知檔案')
+                info_console(f"影片下載完成：{filename}")
             
             # 線程安全的添加完成任務
             try:
@@ -1753,6 +1763,43 @@ class Api(QObject):
             import sys
             import os
             
+            # 檢查是否已經有設定視窗在運行
+            if self.settings_process is not None and self.settings_process.poll() is None:
+                debug_console("設定視窗已經開啟，嘗試調到該視窗")
+                # 設定視窗已經開啟，嘗試將焦點調到該視窗
+                try:
+                    # 嘗試將設定視窗調到最前面
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    
+                    # 查找設定視窗
+                    def find_settings_window(hwnd, windows):
+                        if user32.IsWindowVisible(hwnd):
+                            length = user32.GetWindowTextLengthW(hwnd)
+                            if length > 0:
+                                buffer = ctypes.create_unicode_buffer(length + 1)
+                                user32.GetWindowTextW(hwnd, buffer, length + 1)
+                                if "設定" in buffer.value and "oldfish" in buffer.value:
+                                    windows.append(hwnd)
+                        return True
+                    
+                    windows = []
+                    from ctypes import wintypes
+                    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                    user32.EnumWindows(EnumWindowsProc(find_settings_window), 0)
+                    
+                    if windows:
+                        # 將視窗提到最前面
+                        user32.SetForegroundWindow(windows[0])
+                        user32.ShowWindow(windows[0], 9)  # SW_RESTORE
+                        info_console("設定視窗已調到最前面")
+                        return "設定視窗已調到最前面"
+                except Exception as e:
+                    debug_console(f"調到設定視窗失敗: {e}")
+                
+                info_console("設定視窗已經開啟")
+                return "設定視窗已經開啟"
+            
             # 獲取設定檔路徑
             settings_path = os.path.join(ROOT_DIR, 'settings.pyw')
             
@@ -1762,7 +1809,8 @@ class Api(QObject):
                 if not os.path.exists(python_exe):
                     python_exe = sys.executable
                 
-                subprocess.Popen([python_exe, settings_path], cwd=ROOT_DIR)
+                # 啟動設定視窗並追蹤進程
+                self.settings_process = subprocess.Popen([python_exe, settings_path], cwd=ROOT_DIR)
                 info_console("設定視窗已開啟")
                 return "設定視窗已開啟"
             else:
@@ -1772,6 +1820,66 @@ class Api(QObject):
         except Exception as e:
             error_console(f"開啟設定視窗失敗: {e}")
             return f"開啟設定視窗失敗: {e}"
+
+    @Slot(result=str)
+    def close_settings(self):
+        """關閉設定視窗"""
+        try:
+            debug_console("關閉設定視窗")
+            if self.settings_process is not None:
+                try:
+                    if self.settings_process.poll() is None:  # 檢查進程是否還在運行
+                        self.settings_process.terminate()
+                        info_console("設定視窗已關閉")
+                        self.settings_process = None
+                        return "設定視窗已關閉"
+                    else:
+                        debug_console("設定視窗進程已經結束")
+                        self.settings_process = None
+                        return "設定視窗已經關閉"
+                except Exception as e:
+                    debug_console(f"關閉設定視窗進程失敗: {e}")
+                    return f"關閉設定視窗失敗: {e}"
+            else:
+                debug_console("沒有設定視窗需要關閉")
+                return "沒有設定視窗需要關閉"
+            
+        except Exception as e:
+            error_console(f"關閉設定視窗失敗: {e}")
+            return f"關閉設定視窗失敗: {e}"
+
+    @Slot(result='QVariant')
+    def load_settings(self):
+        """載入設定檔"""
+        debug_console("載入設定檔")
+        try:
+            settings_path = os.path.join(ROOT_DIR, 'settings.json')
+            default_settings = {
+                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
+                'enableNotifications': True
+            }
+            
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    # 處理下載路徑：如果是相對路徑，轉換為絕對路徑
+                    if 'downloadPath' in settings:
+                        if not os.path.isabs(settings['downloadPath']):
+                            settings['downloadPath'] = os.path.join(ROOT_DIR, settings['downloadPath'])
+                    # 合併預設設定，確保所有欄位都存在
+                    merged_settings = {**default_settings, **settings}
+                    info_console("設定檔載入成功")
+                    return merged_settings
+            else:
+                info_console("設定檔不存在，使用預設設定")
+                return default_settings
+                
+        except Exception as e:
+            error_console(f"載入設定檔失敗: {e}")
+            return {
+                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
+                'enableNotifications': True
+            }
 
     @Slot(str, result='QVariant')
     def get_video_info(self, url):
@@ -1925,7 +2033,12 @@ class Api(QObject):
         # 確保下載目錄存在，使用設定中的路徑
         try:
             settings = self.load_settings()
-            download_dir = settings.get('downloadPath', os.path.join(ROOT_DIR, 'downloads'))
+            download_path = settings.get('downloadPath', 'downloads')
+            # 如果是相對路徑，轉換為絕對路徑
+            if not os.path.isabs(download_path):
+                download_dir = os.path.join(ROOT_DIR, download_path)
+            else:
+                download_dir = download_path
         except:
             download_dir = os.path.join(ROOT_DIR, 'downloads')
         os.makedirs(download_dir, exist_ok=True)
@@ -2061,102 +2174,330 @@ class Api(QObject):
             error_console(f"開啟檔案位置時出錯: {e}")
             return f"開啟檔案位置失敗: {e}"
 
-    @Slot(result='QVariant')
-    def load_settings(self):
-        """
-        載入設定檔
-        """
-        debug_console("載入設定檔")
-        try:
-            settings_path = os.path.join(ROOT_DIR, 'settings.json')
-            default_settings = {
-                'downloadPath': os.path.join(ROOT_DIR, 'downloads'),
-                'enableNotifications': True,
-                'theme': 'dark'
-            }
-            
-            if os.path.exists(settings_path):
-                with open(settings_path, 'r', encoding='utf-8') as f:
-                    settings = json.load(f)
-                    # 合併預設設定，確保所有欄位都存在
-                    merged_settings = {**default_settings, **settings}
-                    info_console("設定檔載入成功")
-                    return merged_settings
-            else:
-                info_console("設定檔不存在，使用預設設定")
-                return default_settings
-                
-        except Exception as e:
-            error_console(f"載入設定檔失敗: {e}")
-            return {
-                'downloadPath': os.path.join(ROOT_DIR, 'downloads'),
-                'enableNotifications': True,
-                'theme': 'dark'
-            }
 
-    @Slot('QVariant', result=str)
-    def save_settings(self, settings):
-        """
-        儲存設定檔
-        """
-        debug_console(f"儲存設定檔: {settings}")
-        try:
-            settings_path = os.path.join(ROOT_DIR, 'settings.json')
-            with open(settings_path, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
-            info_console("設定檔儲存成功")
-            return "設定已儲存"
-            
-        except Exception as e:
-            error_console(f"儲存設定檔失敗: {e}")
-            return f"儲存設定失敗: {e}"
 
-    @Slot(result=str)
-    def select_download_path(self):
-        """
-        選擇下載路徑
-        """
-        debug_console("選擇下載路徑")
-        try:
-            from PySide6.QtWidgets import QFileDialog
-            
-            # 使用資料夾選擇對話框
-            folder = QFileDialog.getExistingDirectory(
-                None,
-                "選擇下載資料夾",
-                os.path.join(ROOT_DIR, 'downloads')
-            )
-            
-            if folder:
-                info_console(f"選擇的下載路徑: {folder}")
-                return folder
-            else:
-                debug_console("使用者取消選擇路徑")
-                return ""
-                
-        except Exception as e:
-            error_console(f"選擇下載路徑失敗: {e}")
-            return ""
 
     def show_notification(self, title, message):
         """
-        顯示桌面通知
+        顯示桌面Toast通知
         """
-        debug_console(f"顯示通知: {title} - {message}")
+        debug_console(f"🔔 顯示Toast通知: {title} - {message}")
+        debug_console(f"🔔 作業系統: {os.name}")
+        
         try:
             if os.name == 'nt':  # Windows
-                import win32gui
-                import win32con
-                # 使用Windows API顯示通知
-                win32gui.MessageBox(0, message, title, win32con.MB_ICONINFORMATION | win32con.MB_TOPMOST)
+                debug_console("🔔 開始嘗試Windows通知方法")
+                
+                # 方法1: 嘗試使用Windows Toast API (最推薦)
+                debug_console("🔔 嘗試Windows Toast API...")
+                if self._try_windows_toast_api(title, message):
+                    debug_console("🔔 Windows Toast API成功")
+                    return
+                debug_console("🔔 Windows Toast API失敗，嘗試下一個方法")
+                
+                # 方法2: 嘗試使用plyer (跨平台)
+                debug_console("🔔 嘗試plyer...")
+                if self._try_plyer_notification(title, message):
+                    debug_console("🔔 plyer成功")
+                    return
+                debug_console("🔔 plyer失敗，嘗試下一個方法")
+                
+                # 方法3: 嘗試使用win10toast
+                debug_console("🔔 嘗試win10toast...")
+                if self._try_win10toast(title, message):
+                    debug_console("🔔 win10toast成功")
+                    return
+                debug_console("🔔 win10toast失敗，嘗試下一個方法")
+                
+                # 方法4: 回退到MessageBox
+                debug_console("🔔 嘗試MessageBox回退...")
+                self._try_messagebox_fallback(title, message)
+                debug_console("🔔 MessageBox回退完成")
+                
+                # 方法5: 強制視覺通知 - 在主視窗顯示訊息
+                debug_console("🔔 嘗試強制視覺通知...")
+                self._try_visual_notification(title, message)
+                debug_console("🔔 強制視覺通知完成")
+                
             else:
                 # Linux/macOS 可以使用其他通知方式
-                info_console(f"通知: {title} - {message}")
+                debug_console("🔔 非Windows系統，嘗試plyer")
+                try:
+                    from plyer import notification
+                    notification.notify(
+                        title=title,
+                        message=message,
+                        timeout=5
+                    )
+                    debug_console("🔔 plyer通知成功")
+                except Exception as e:
+                    debug_console(f"🔔 plyer通知失敗: {e}")
+                    info_console(f"通知: {title} - {message}")
                 
         except Exception as e:
-            error_console(f"顯示通知失敗: {e}")
-            # 如果通知失敗，至少在控制台顯示
+            error_console(f"🔔 顯示通知失敗: {e}")
+            # 如果所有通知方法都失敗，回退到簡單的console輸出
             info_console(f"通知: {title} - {message}")
+
+    def _try_windows_toast_api(self, title, message):
+        """嘗試使用Windows Toast API"""
+        try:
+            import subprocess
+            
+            # 獲取應用程式圖示路徑
+            icon_path = ""
+            icon_png = os.path.join(ROOT_DIR, 'assets', 'icon.png')
+            icon_ico = os.path.join(ROOT_DIR, 'assets', 'icon.ico')
+            
+            if os.path.exists(icon_png):
+                icon_path = "assets/icon.png"
+            elif os.path.exists(icon_ico):
+                icon_path = "assets/icon.ico"
+            
+            debug_console(f"圖示路徑: {icon_path}")
+            
+            # 使用PowerShell調用Windows Toast通知
+            ps_script = f"""
+            try {{
+                [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+                [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+                [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+                
+                $template = @"
+                <toast scenario="default" launch="action=viewEvent&amp;eventId=1983" activationType="foreground">
+                    <visual>
+                        <binding template="ToastGeneric">
+                            <text>{title}</text>
+                            <text>{message}</text>
+                            {f'<image placement="appLogoOverride" src="{icon_path}" hint-crop="circle"/>' if icon_path else ''}
+                        </binding>
+                    </visual>
+                    <audio src="ms-winsoundevent:Notification.Default"/>
+                    <actions>
+                        <action activationType="foreground" content="檢視" arguments="action=viewEvent&amp;eventId=1983"/>
+                        <action activationType="background" content="關閉" arguments="action=closeEvent&amp;eventId=1983"/>
+                    </actions>
+                </toast>
+"@
+                
+                $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+                $xml.LoadXml($template)
+                $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+                $toast.ExpirationTime = [DateTimeOffset]::Now.AddMinutes(2)
+                $toast.Tag = "OldFishDownloader_Download_Complete"
+                $toast.Group = "Downloads"
+                $toast.Data = [Windows.UI.Notifications.NotificationData]::new()
+                $toast.Data.Values.Add("title", "{title}")
+                $toast.Data.Values.Add("message", "{message}")
+                
+                # 嘗試多個應用程式名稱
+                $appNames = @("OldFish Video Downloader", "OldFishDownloader", "Python", "pywebview")
+                $success = $false
+                
+                foreach ($appName in $appNames) {{
+                    try {{
+                        $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appName)
+                        $notifier.Show($toast)
+                        Write-Host "Toast sent via app: $appName"
+                        $success = $true
+                        break
+                    }} catch {{
+                        Write-Host "Failed to send via app: $appName - $($_.Exception.Message)"
+                    }}
+                }}
+                
+                if (-not $success) {{
+                    Write-Host "All toast methods failed"
+                    exit 1
+                }}
+            }} catch {{
+                Write-Host "Toast API error: $($_.Exception.Message)"
+                exit 1
+            }}
+            """
+            
+            result = subprocess.run([
+                'powershell', '-ExecutionPolicy', 'Bypass', '-Command', ps_script
+            ], capture_output=True, timeout=15)
+            
+            debug_console(f"Toast API結果: {result.returncode}")
+            if result.stdout:
+                debug_console(f"Toast API輸出: {result.stdout.decode()}")
+            if result.stderr:
+                debug_console(f"Toast API錯誤: {result.stderr.decode()}")
+            
+            if result.returncode == 0:
+                debug_console("Windows Toast API通知發送成功")
+                return True
+            else:
+                debug_console(f"Windows Toast API失敗: {result.stderr.decode() if result.stderr else '未知錯誤'}")
+                return False
+                
+        except Exception as e:
+            debug_console(f"Windows Toast API異常: {e}")
+            return False
+
+    def _try_plyer_notification(self, title, message):
+        """嘗試使用plyer通知"""
+        try:
+            from plyer import notification
+            notification.notify(
+                title=title,
+                message=message,
+                timeout=5
+            )
+            debug_console("plyer通知發送成功")
+            return True
+        except Exception as e:
+            debug_console(f"plyer通知失敗: {e}")
+            return False
+
+    def _try_win10toast(self, title, message):
+        """嘗試使用win10toast"""
+        try:
+            from win10toast import ToastNotifier
+            toaster = ToastNotifier()
+            result = toaster.show_toast(
+                title, 
+                message, 
+                duration=5,
+                threaded=False
+            )
+            if result:
+                debug_console("win10toast通知發送成功")
+                return True
+            else:
+                debug_console("win10toast通知失敗")
+                return False
+        except Exception as e:
+            debug_console(f"win10toast異常: {e}")
+            return False
+
+    def _try_messagebox_fallback(self, title, message):
+        """回退到MessageBox"""
+        try:
+            import subprocess
+            
+            ps_script = f"""
+            Add-Type -AssemblyName System.Windows.Forms
+            [System.Windows.Forms.MessageBox]::Show('{message}', '{title}', 'OK', 'Information')
+            """
+            
+            result = subprocess.run([
+                'powershell', '-ExecutionPolicy', 'Bypass', '-Command', ps_script
+            ], capture_output=True, timeout=10)
+            
+            if result.returncode == 0:
+                debug_console("MessageBox通知發送成功")
+            else:
+                debug_console(f"MessageBox通知失敗: {result.stderr.decode() if result.stderr else '未知錯誤'}")
+                
+        except Exception as e:
+            debug_console(f"MessageBox通知異常: {e}")
+            # 最後的回退方案
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(0, message, title, 1)
+                debug_console("ctypes MessageBox通知發送成功")
+            except Exception as e2:
+                debug_console(f"ctypes MessageBox通知也失敗: {e2}")
+                raise e2
+
+    def _try_visual_notification(self, title, message):
+        """強制視覺通知 - 在主視窗顯示訊息"""
+        try:
+            # 在控制台顯示大標題
+            info_console("=" * 60)
+            info_console(f"🎉 {title} 🎉")
+            info_console("=" * 60)
+            info_console(f"📁 {message}")
+            info_console("=" * 60)
+            
+            # 嘗試讓主視窗獲得焦點並顯示訊息
+            try:
+                # 使用JavaScript在前端顯示通知
+                js_notification = f"""
+                // 創建通知元素
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: linear-gradient(135deg, #2ecc71, #27ae60);
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                    z-index: 10000;
+                    font-family: 'Microsoft YaHei', sans-serif;
+                    font-size: 14px;
+                    max-width: 400px;
+                    animation: slideIn 0.3s ease-out;
+                `;
+                
+                notification.innerHTML = `
+                    <div style="font-weight: bold; margin-bottom: 8px; font-size: 16px;">🎉 {title}</div>
+                    <div style="opacity: 0.9;">{message}</div>
+                `;
+                
+                // 添加動畫樣式
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes slideIn {{
+                        from {{ transform: translateX(100%); opacity: 0; }}
+                        to {{ transform: translateX(0); opacity: 1; }}
+                    }}
+                `;
+                document.head.appendChild(style);
+                
+                // 添加到頁面
+                document.body.appendChild(notification);
+                
+                // 自動移除通知
+                setTimeout(() => {{
+                    notification.style.animation = 'slideOut 0.3s ease-in';
+                    setTimeout(() => {{
+                        if (notification.parentNode) {{
+                            notification.parentNode.removeChild(notification);
+                        }}
+                    }}, 300);
+                }}, 5000);
+                
+                // 添加滑出動畫
+                const slideOutStyle = document.createElement('style');
+                slideOutStyle.textContent = `
+                    @keyframes slideOut {{
+                        from {{ transform: translateX(0); opacity: 1; }}
+                        to {{ transform: translateX(100%); opacity: 0; }}
+                    }}
+                `;
+                document.head.appendChild(slideOutStyle);
+                """
+                
+                # 執行JavaScript通知
+                self._eval_js(js_notification)
+                debug_console("前端視覺通知已執行")
+                
+            except Exception as e:
+                debug_console(f"前端通知失敗: {e}")
+            
+            return True
+            
+        except Exception as e:
+            debug_console(f"視覺通知失敗: {e}")
+            return False
+
+    @Slot(str, str, result=str)
+    def test_notification(self, title, message):
+        """
+        測試通知功能
+        """
+        try:
+            self.show_notification(title, message)
+            return "通知已發送"
+        except Exception as e:
+            error_console(f"測試通知失敗: {e}")
+            return f"通知發送失敗: {e}"
 
 # 創建 pywebview 視窗
 if __name__ == '__main__':
@@ -2186,12 +2527,17 @@ if __name__ == '__main__':
     icon_path = os.path.join(assets_path, 'icon.ico')
     if os.path.exists(icon_path):
         main_window.setWindowIcon(QIcon(icon_path))
+    
+    # 儲存 API 實例的引用，以便在關閉事件中使用
+    global api_instance
+    api_instance = None
 
     view = QWebEngineView()
     channel = QWebChannel()
     view.page().setWebChannel(channel)
 
     api = Api(view.page())
+    api_instance = api  # 儲存 API 實例的引用
     channel.registerObject('api', api)
     # 將後端背景取得資訊的結果回推到前端 JS（保持與原前端相容）
     def on_info_ready(info):
@@ -2214,6 +2560,20 @@ if __name__ == '__main__':
             debug_console(f"錯誤回傳失敗: {e}")
     api.infoReady.connect(on_info_ready)
     api.infoError.connect(on_info_error)
+
+    # 添加關閉事件處理
+    def close_event_handler(event):
+        """主視窗關閉事件處理"""
+        try:
+            debug_console("主視窗即將關閉，正在關閉設定視窗...")
+            if api_instance:
+                api_instance.close_settings()
+            event.accept()
+        except Exception as e:
+            error_console(f"關閉設定視窗時出錯: {e}")
+            event.accept()
+    
+    main_window.closeEvent = close_event_handler
 
     # 載入本地 HTML
     view.load(QUrl.fromLocalFile(main_html_path))
