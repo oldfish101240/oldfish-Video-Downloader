@@ -1410,8 +1410,20 @@
          */
         function openFileLocation(taskId) {
             const task = downloadQueue.find(t => t.id === taskId);
-            // 這裡不再檢查 task.filePath，因為後端會固定開啟 downloads 資料夾
-            window.pywebview.api.open_file_location("") // 傳遞空字串，因為後端會忽略它
+            if (!task) {
+                console.error("找不到任務:", taskId);
+                showModal("錯誤", "找不到指定的下載任務。");
+                return;
+            }
+            
+            if (!task.filePath) {
+                console.error("任務沒有檔案路徑:", task);
+                showModal("錯誤", "檔案路徑不可用。");
+                return;
+            }
+            
+            // 傳遞實際的檔案路徑給後端
+            window.pywebview.api.open_file_location(task.filePath)
                 .then(result => {
                     console.log("開啟檔案位置結果:", result);
                 })

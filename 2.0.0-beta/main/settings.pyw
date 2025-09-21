@@ -15,7 +15,7 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtGui import QIcon
 
 # 添加主程式目錄到路徑
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(ROOT_DIR)
 
 def debug_console(message):
@@ -28,7 +28,7 @@ class SettingsApi(QObject):
     def __init__(self):
         super().__init__()
         self.root_dir = ROOT_DIR
-        self.settings_file = os.path.join(self.root_dir, 'settings.json')
+        self.settings_file = os.path.join(self.root_dir, 'main', 'settings.json')
     
     @Slot(result=dict)
     def load_settings(self):
@@ -37,17 +37,12 @@ class SettingsApi(QObject):
             debug_console("載入設定中...")
             
             default_settings = {
-                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
                 'enableNotifications': True
             }
             
             if os.path.exists(self.settings_file):
                 with open(self.settings_file, 'r', encoding='utf-8') as f:
                     settings = json.load(f)
-                # 處理下載路徑：如果是相對路徑，轉換為絕對路徑
-                if 'downloadPath' in settings:
-                    if not os.path.isabs(settings['downloadPath']):
-                        settings['downloadPath'] = os.path.join(self.root_dir, settings['downloadPath'])
                 # 確保所有預設設定都存在
                 for key, value in default_settings.items():
                     if key not in settings:
@@ -61,7 +56,6 @@ class SettingsApi(QObject):
         except Exception as e:
             debug_console(f"載入設定失敗: {e}")
             return {
-                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
                 'enableNotifications': True
             }
     
@@ -72,21 +66,6 @@ class SettingsApi(QObject):
             debug_console(f"收到儲存請求: {settings}")
             debug_console(f"設定檔案路徑: {self.settings_file}")
             
-            # 處理下載路徑：如果是絕對路徑且位於程式目錄下，轉換為相對路徑
-            if 'downloadPath' in settings:
-                download_path = settings['downloadPath']
-                debug_console(f"原始下載路徑: {download_path}")
-                if os.path.isabs(download_path):
-                    try:
-                        # 嘗試將絕對路徑轉換為相對於程式目錄的路徑
-                        rel_path = os.path.relpath(download_path, self.root_dir)
-                        if not rel_path.startswith('..'):
-                            settings['downloadPath'] = rel_path
-                            debug_console(f"轉換為相對路徑: {rel_path}")
-                    except ValueError:
-                        # 如果無法轉換為相對路徑，保持絕對路徑
-                        debug_console("無法轉換為相對路徑，保持絕對路徑")
-                        pass
             
             # 確保目錄存在
             settings_dir = os.path.dirname(self.settings_file)
@@ -120,7 +99,6 @@ class SettingsApi(QObject):
         try:
             debug_console("重設為預設值")
             default_settings = {
-                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
                 'enableNotifications': True
             }
             debug_console(f"預設設定: {default_settings}")
@@ -128,71 +106,10 @@ class SettingsApi(QObject):
         except Exception as e:
             debug_console(f"重設為預設值失敗: {e}")
             return {
-                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
                 'enableNotifications': True
             }
 
-    @Slot(result=str)
-    def select_download_path(self):
-        """選擇下載路徑"""
-        try:
-            from PySide6.QtWidgets import QFileDialog
-            
-            current_path = self.load_settings().get('downloadPath', 'downloads')
-            
-            selected_path = QFileDialog.getExistingDirectory(
-                None,
-                "選擇下載資料夾",
-                current_path
-            )
-            
-            if selected_path:
-                debug_console(f"選擇的路徑: {selected_path}")
-                return selected_path
-            return ""
-            
-        except Exception as e:
-            debug_console(f"選擇路徑失敗: {e}")
-            return ""
 
-    @Slot(str, str, result=str)
-    def test_notification(self, title, message):
-        """測試Toast通知功能"""
-        try:
-            if os.name == 'nt':  # Windows
-                # 方法1: 嘗試使用Windows Toast API (最推薦)
-                if self._try_windows_toast_api(title, message):
-                    return "Windows Toast API通知已發送"
-                
-                # 方法2: 嘗試使用plyer (跨平台)
-                if self._try_plyer_notification(title, message):
-                    return "plyer通知已發送"
-                
-                # 方法3: 嘗試使用win10toast
-                if self._try_win10toast(title, message):
-                    return "win10toast通知已發送"
-                
-                # 方法4: 回退到MessageBox
-                if self._try_messagebox_fallback(title, message):
-                    return "MessageBox通知已發送"
-                
-                return "所有通知方法都失敗"
-            else:
-                # Linux/macOS
-                try:
-                    from plyer import notification
-                    notification.notify(
-                        title=title,
-                        message=message,
-                        timeout=5
-                    )
-                    return "plyer通知已發送"
-                except:
-                    return "通知功能僅支援Windows系統"
-                
-        except Exception as e:
-            debug_console(f"測試通知失敗: {e}")
-            return f"通知發送失敗: {e}"
 
     def _try_windows_toast_api(self, title, message):
         """嘗試使用Windows Toast API"""
@@ -312,6 +229,11 @@ class SettingsWindow(QMainWindow):
         """初始化UI"""
         self.setWindowTitle("設定 - oldfish影片下載器")
         self.setFixedSize(800, 600)  # 減小視窗大小
+        
+        # 設定視窗圖示
+        icon_path = os.path.join(ROOT_DIR, 'main', 'assets', 'icon.ico')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
         # 創建中央部件
         central_widget = QWidget()
@@ -486,16 +408,6 @@ class SettingsWindow(QMainWindow):
                 <h1>設定</h1>
             </div>
             
-            <div class="section">
-                <h2>下載設定</h2>
-                <div class="item">
-                    <label class="label">下載目錄</label>
-                    <div class="input-group">
-                        <div class="path-display" id="download-path-display">正在載入...</div>
-                        <button class="btn" onclick="selectDownloadPath()">選擇</button>
-                    </div>
-                </div>
-            </div>
             
             <div class="section">
                 <h2>通知設定</h2>
@@ -509,7 +421,6 @@ class SettingsWindow(QMainWindow):
             
             <div class="actions">
                 <button class="btn" onclick="resetSettings()">重設</button>
-                <button class="btn" onclick="testNotification()">測試通知</button>
                 <button class="btn primary" onclick="saveSettings()">儲存</button>
             </div>
             
@@ -523,58 +434,44 @@ class SettingsWindow(QMainWindow):
             
             <script>
                 let currentSettings = {
-                    downloadPath: '',
                     enableNotifications: true
                 };
                 
                 function loadSettings() {
                     console.log('開始載入設定...');
-                    if (window.qt && window.qt.webChannelTransport) {
-                        new QWebChannel(qt.webChannelTransport, function(channel) {
-                            window.api = channel.objects.api;
-                            console.log('API已初始化:', window.api);
-                            window.api.load_settings().then(settings => {
-                                console.log('載入的設定:', settings);
-                                currentSettings = settings;
-                                updateUI();
-                            }).catch(error => {
-                                console.error('載入設定失敗:', error);
-                                updateUI();
+                    
+                    // 等待WebChannel準備就緒
+                    function initWebChannel() {
+                        if (window.qt && window.qt.webChannelTransport) {
+                            console.log('WebChannel可用，初始化API...');
+                            new QWebChannel(qt.webChannelTransport, function(channel) {
+                                window.api = channel.objects.api;
+                                console.log('API已初始化:', window.api);
+                                window.api.load_settings().then(settings => {
+                                    console.log('載入的設定:', settings);
+                                    currentSettings = settings;
+                                    updateUI();
+                                }).catch(error => {
+                                    console.error('載入設定失敗:', error);
+                                    updateUI();
+                                });
                             });
-                        });
-                    } else {
-                        console.error('WebChannel不可用');
-                        updateUI();
-                    }
-                }
-                
-                function updateUI() {
-                    const pathDisplay = document.getElementById('download-path-display');
-                    if (pathDisplay) {
-                        if (currentSettings.downloadPath && currentSettings.downloadPath !== '') {
-                            pathDisplay.textContent = currentSettings.downloadPath;
                         } else {
-                            // 如果沒有設定路徑，顯示預設路徑
-                            pathDisplay.textContent = '正在載入預設路徑...';
+                            console.log('WebChannel尚未準備就緒，等待中...');
+                            setTimeout(initWebChannel, 100);
                         }
                     }
                     
+                    initWebChannel();
+                }
+                
+                function updateUI() {
                     const notificationCheckbox = document.getElementById('enable-notifications');
                     if (notificationCheckbox) {
                         notificationCheckbox.checked = currentSettings.enableNotifications || true;
                     }
                 }
                 
-                function selectDownloadPath() {
-                    if (window.api) {
-                        window.api.select_download_path().then(path => {
-                            if (path) {
-                                currentSettings.downloadPath = path;
-                                updateUI();
-                            }
-                        }).catch(() => showModal('錯誤', '選擇路徑失敗'));
-                    }
-                }
                 
                 function saveSettings() {
                     // 確保所有設定都是最新的
@@ -594,11 +491,6 @@ class SettingsWindow(QMainWindow):
                 
                 function updateCurrentSettings() {
                     // 更新當前設定，確保所有變更都被保存
-                    const pathDisplay = document.getElementById('download-path-display');
-                    if (pathDisplay && pathDisplay.textContent !== '正在載入...' && pathDisplay.textContent !== '正在載入預設路徑...') {
-                        currentSettings.downloadPath = pathDisplay.textContent;
-                    }
-                    
                     const notificationCheckbox = document.getElementById('enable-notifications');
                     if (notificationCheckbox) {
                         currentSettings.enableNotifications = notificationCheckbox.checked;
@@ -624,19 +516,6 @@ class SettingsWindow(QMainWindow):
                     }
                 }
                 
-                function testNotification() {
-                    if (window.api) {
-                        window.api.test_notification('測試通知', '這是一個測試通知，如果您看到此訊息，表示通知功能正常運作！').then(result => {
-                            console.log('測試通知結果:', result);
-                            showModal('測試通知', result);
-                        }).catch(error => {
-                            console.error('測試通知失敗:', error);
-                            showModal('測試失敗', '通知測試失敗: ' + error);
-                        });
-                    } else {
-                        showModal('錯誤', 'API未初始化');
-                    }
-                }
                 
                 function showModal(title, message) {
                     document.getElementById('modal-title').textContent = title;

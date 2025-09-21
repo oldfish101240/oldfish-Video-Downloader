@@ -1473,8 +1473,20 @@ HTML = fr"""
          */
         function openFileLocation(taskId) {{
             const task = downloadQueue.find(t => t.id === taskId);
-            // 這裡不再檢查 task.filePath，因為後端會固定開啟 downloads 資料夾
-            window.pywebview.api.open_file_location("") // 傳遞空字串，因為後端會忽略它
+            if (!task) {{
+                console.error("找不到任務:", taskId);
+                showModal("錯誤", "找不到指定的下載任務。");
+                return;
+            }}
+            
+            if (!task.filePath) {{
+                console.error("任務沒有檔案路徑:", task);
+                showModal("錯誤", "檔案路徑不可用。");
+                return;
+            }}
+            
+            // 傳遞實際的檔案路徑給後端
+            window.pywebview.api.open_file_location(task.filePath)
                 .then(result => {{
                     console.log("開啟檔案位置結果:", result);
                 }})
@@ -1853,19 +1865,14 @@ class Api(QObject):
         """載入設定檔"""
         debug_console("載入設定檔")
         try:
-            settings_path = os.path.join(ROOT_DIR, 'settings.json')
+            settings_path = os.path.join(ROOT_DIR, 'main', 'settings.json')
             default_settings = {
-                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
                 'enableNotifications': True
             }
             
             if os.path.exists(settings_path):
                 with open(settings_path, 'r', encoding='utf-8') as f:
                     settings = json.load(f)
-                    # 處理下載路徑：如果是相對路徑，轉換為絕對路徑
-                    if 'downloadPath' in settings:
-                        if not os.path.isabs(settings['downloadPath']):
-                            settings['downloadPath'] = os.path.join(ROOT_DIR, settings['downloadPath'])
                     # 合併預設設定，確保所有欄位都存在
                     merged_settings = {**default_settings, **settings}
                     info_console("設定檔載入成功")
@@ -1877,7 +1884,6 @@ class Api(QObject):
         except Exception as e:
             error_console(f"載入設定檔失敗: {e}")
             return {
-                'downloadPath': 'downloads',  # 使用相對路徑，確保程式可移植性
                 'enableNotifications': True
             }
 
@@ -2030,17 +2036,9 @@ class Api(QObject):
         """
         debug_console(f"接收到下載請求: 任務ID={task_id}, URL={url}, 畫質={quality}, 格式={format_type}")
         
-        # 確保下載目錄存在，使用設定中的路徑
-        try:
-            settings = self.load_settings()
-            download_path = settings.get('downloadPath', 'downloads')
-            # 如果是相對路徑，轉換為絕對路徑
-            if not os.path.isabs(download_path):
-                download_dir = os.path.join(ROOT_DIR, download_path)
-            else:
-                download_dir = download_path
-        except:
-            download_dir = os.path.join(ROOT_DIR, 'downloads')
+        # 使用固定的下載目錄
+        download_dir = os.path.join(ROOT_DIR, 'downloads')
+        debug_console(f"下載目錄: {download_dir}")
         os.makedirs(download_dir, exist_ok=True)
 
         ydl_opts = {
@@ -2149,16 +2147,19 @@ class Api(QObject):
         return _wrapper_progress_hook
 
     @Slot(str, result=str)
-    def open_file_location(self, filepath_ignored): # 參數名稱更改為 filepath_ignored
+    def open_file_location(self, filepath_ignored):
         """
-        總是開啟下載檔案的資料夾 (即 downloads 目錄)。
+        開啟設定中的下載資料夾。
         """
-        debug_console(f"嘗試開啟下載資料夾...")
         try:
+            # 使用固定的下載目錄
             target_dir = os.path.join(ROOT_DIR, 'downloads')
+            debug_console(f"開啟下載資料夾: {target_dir}")
             
             # 確保目標資料夾存在
-            os.makedirs(target_dir, exist_ok=True) # 確保資料夾存在
+            if not os.path.exists(target_dir):
+                debug_console(f"目標資料夾不存在，創建: {target_dir}")
+                os.makedirs(target_dir, exist_ok=True)
 
             if os.name == 'nt': # Windows
                 subprocess.Popen(f'explorer "{target_dir}"')
@@ -2167,8 +2168,8 @@ class Api(QObject):
             else: # Linux
                 subprocess.Popen(['xdg-open', target_dir])
 
-            info_console(f"已開啟資料夾: {target_dir}")
-            return "成功開啟資料夾"
+            info_console(f"已開啟下載資料夾: {target_dir}")
+            return "成功開啟下載資料夾"
 
         except Exception as e:
             error_console(f"開啟檔案位置時出錯: {e}")
@@ -2181,47 +2182,28 @@ class Api(QObject):
         """
         顯示桌面Toast通知
         """
-        debug_console(f"🔔 顯示Toast通知: {title} - {message}")
-        debug_console(f"🔔 作業系統: {os.name}")
-        
         try:
             if os.name == 'nt':  # Windows
-                debug_console("🔔 開始嘗試Windows通知方法")
-                
                 # 方法1: 嘗試使用Windows Toast API (最推薦)
-                debug_console("🔔 嘗試Windows Toast API...")
                 if self._try_windows_toast_api(title, message):
-                    debug_console("🔔 Windows Toast API成功")
                     return
-                debug_console("🔔 Windows Toast API失敗，嘗試下一個方法")
                 
                 # 方法2: 嘗試使用plyer (跨平台)
-                debug_console("🔔 嘗試plyer...")
                 if self._try_plyer_notification(title, message):
-                    debug_console("🔔 plyer成功")
                     return
-                debug_console("🔔 plyer失敗，嘗試下一個方法")
                 
                 # 方法3: 嘗試使用win10toast
-                debug_console("🔔 嘗試win10toast...")
                 if self._try_win10toast(title, message):
-                    debug_console("🔔 win10toast成功")
                     return
-                debug_console("🔔 win10toast失敗，嘗試下一個方法")
                 
                 # 方法4: 回退到MessageBox
-                debug_console("🔔 嘗試MessageBox回退...")
                 self._try_messagebox_fallback(title, message)
-                debug_console("🔔 MessageBox回退完成")
                 
                 # 方法5: 強制視覺通知 - 在主視窗顯示訊息
-                debug_console("🔔 嘗試強制視覺通知...")
                 self._try_visual_notification(title, message)
-                debug_console("🔔 強制視覺通知完成")
                 
             else:
                 # Linux/macOS 可以使用其他通知方式
-                debug_console("🔔 非Windows系統，嘗試plyer")
                 try:
                     from plyer import notification
                     notification.notify(
@@ -2229,9 +2211,7 @@ class Api(QObject):
                         message=message,
                         timeout=5
                     )
-                    debug_console("🔔 plyer通知成功")
                 except Exception as e:
-                    debug_console(f"🔔 plyer通知失敗: {e}")
                     info_console(f"通知: {title} - {message}")
                 
         except Exception as e:
@@ -2254,7 +2234,6 @@ class Api(QObject):
             elif os.path.exists(icon_ico):
                 icon_path = "assets/icon.ico"
             
-            debug_console(f"圖示路徑: {icon_path}")
             
             # 使用PowerShell調用Windows Toast通知
             ps_script = f"""
@@ -2320,21 +2299,12 @@ class Api(QObject):
                 'powershell', '-ExecutionPolicy', 'Bypass', '-Command', ps_script
             ], capture_output=True, timeout=15)
             
-            debug_console(f"Toast API結果: {result.returncode}")
-            if result.stdout:
-                debug_console(f"Toast API輸出: {result.stdout.decode()}")
-            if result.stderr:
-                debug_console(f"Toast API錯誤: {result.stderr.decode()}")
-            
             if result.returncode == 0:
-                debug_console("Windows Toast API通知發送成功")
                 return True
             else:
-                debug_console(f"Windows Toast API失敗: {result.stderr.decode() if result.stderr else '未知錯誤'}")
                 return False
                 
         except Exception as e:
-            debug_console(f"Windows Toast API異常: {e}")
             return False
 
     def _try_plyer_notification(self, title, message):
@@ -2486,18 +2456,6 @@ class Api(QObject):
         except Exception as e:
             debug_console(f"視覺通知失敗: {e}")
             return False
-
-    @Slot(str, str, result=str)
-    def test_notification(self, title, message):
-        """
-        測試通知功能
-        """
-        try:
-            self.show_notification(title, message)
-            return "通知已發送"
-        except Exception as e:
-            error_console(f"測試通知失敗: {e}")
-            return f"通知發送失敗: {e}"
 
 # 創建 pywebview 視窗
 if __name__ == '__main__':
