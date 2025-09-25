@@ -228,7 +228,7 @@ class SettingsWindow(QMainWindow):
     def init_ui(self):
         """初始化UI"""
         self.setWindowTitle("設定 - oldfish影片下載器")
-        self.setFixedSize(800, 600)  # 減小視窗大小
+        self.setFixedSize(500, 350)  # 調小視窗大小
         
         # 設定視窗圖示
         icon_path = os.path.join(ROOT_DIR, 'main', 'assets', 'icon.ico')
@@ -547,11 +547,9 @@ def main():
         if app is None:
             app = QApplication(sys.argv)
         
-        # 創建設定視窗
         window = SettingsWindow()
         window.show()
         
-        # 啟動應用
         sys.exit(app.exec())
         
     except Exception as e:

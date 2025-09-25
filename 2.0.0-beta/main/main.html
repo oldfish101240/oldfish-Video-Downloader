@@ -34,6 +34,30 @@
             color: #e5e7eb;
             transition: background 0.3s ease, color 0.3s ease;
         }
+        /* 全域卷軸樣式（Chromium/QtWebEngine） */
+        html, body, .main, .queue-list {
+            scrollbar-width: thin; /* Firefox 後備 */
+            scrollbar-color: #4a4f59 #121418; /* 拇指/軌道：現代灰 */
+        }
+        ::-webkit-scrollbar {
+            width: 8px;  /* 更纖細 */
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #121418; /* 深色軌道 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3a3f4a; /* 中性深灰 */
+            border-radius: 6px;
+            border: 2px solid #121418; /* 與軌道留縫，視覺更輕 */
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4a4f59; /* 略亮的灰色，避免過亮 */
+            border-color: #121418;
+        }
+        ::-webkit-scrollbar-corner {
+            background: #121418;
+        }
         .container {
             display: flex;
             height: 100vh;
@@ -106,6 +130,7 @@
             align-items: center;
             justify-content: flex-start;
             position: relative;
+            overflow-y: auto; /* 讓主內容可滾動，配合 sticky 底部區 */
         }
         .title-img {
             margin-top: 60px;
@@ -199,6 +224,7 @@
             display: flex; /* 讓其內容可以居中 */
             flex-direction: column;
             align-items: center;
+            justify-content: space-between; /* 上下分佈，讓底部輸入區靠底 */
         }
         .modal-bg {
             position: fixed;
@@ -437,6 +463,21 @@
             background: #f5f5f5;
             color: #333;
         }
+        /* 淺色主題的卷軸顏色 */
+        body.light-theme, body.light-theme .main, body.light-theme .queue-list {
+            scrollbar-color: #b5b8bd #ededed; /* 淺色主題灰 */
+        }
+        body.light-theme ::-webkit-scrollbar-track {
+            background: #ededed;
+        }
+        body.light-theme ::-webkit-scrollbar-thumb {
+            background: #c7cad0; /* 中灰 */
+            border-color: #ededed;
+            border-radius: 6px;
+        }
+        body.light-theme ::-webkit-scrollbar-thumb:hover {
+            background: #b5b8bd; /* 稍深灰 */
+        }
         body.light-theme .container {
             background: #f5f5f5;
         }
@@ -536,14 +577,37 @@
         }
 
         /* 新增佇列頁面樣式 */
+        .queue-search-row {
+            width: 90%;
+            max-width: 600px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
         .queue-list {
             width: 90%; /* 調整列表寬度 */
             max-width: 800px; /* 最大寬度限制 */
-            margin-top: 30px; /* 距離頂部間距 */
             display: flex;
             flex-direction: column;
             align-items: center; /* 讓列表項居中 */
-            padding-bottom: 50px; /* 底部留白 */
+            padding-bottom: 110px; /* 下修預留高度，讓列表可視範圍更大 */
+        }
+
+        .queue-bottom {
+            position: sticky; /* 置於主內容底部，不覆蓋左側標籤列 */
+            bottom: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 0 12px; /* 縮小上下高度 */
+            background: #181a20; /* 與頁面一致，避免透出 */
+            z-index: 1200; /* 高於一般內容，低於模態視窗(>10000) */
+            box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
         }
 
         .queue-item {
@@ -646,7 +710,7 @@
             max-width: 780px; /* 比項目略窄 */
             height: 1px;
             background-color: #3a3f4a;
-            margin: 20px auto; /* 居中並調整間距 */
+            margin: 0 auto 8px; /* 縮小與輸入區距離 */
         }
         .queue-item-actions {
             display: flex;
@@ -703,6 +767,14 @@
             <div class="queue-page" id="queue-page"> <!-- 移除 hidden class，改由 JS 完全控制 -->
                 <div class="queue-list" id="queue-list">
                     <!-- 影片任務將會動態新增到這裡 -->
+                </div>
+                <div class="queue-bottom">
+                    <div class="queue-separator"></div>
+                    <!-- 佇列頁面的輸入框（置底置中） -->
+                    <div class="queue-search-row" id="queue-search-row">
+                        <input class="search-input" id="queue-video-url" type="text" placeholder="請輸入影片網址...">
+                        <button class="download-btn" onclick="downloadVideoFromQueue()">下載</button>
+                    </div>
                 </div>
             </div>
 
@@ -762,6 +834,8 @@
     <script>
         // 儲存上次獲取的影片資訊以還原畫質選項
         let lastVideoInfo = null;
+        // 儲存目前正在處理的影片網址（從主頁或佇列進入）
+        let currentUrl = '';
 
         // MP3, AAC, FLAC, WAV 的音訊品質選項
         const AUDIO_QUALITIES = [
@@ -845,6 +919,7 @@
             const titleImg = document.getElementById('title-img');
             const searchRow = document.getElementById('search-row');
             const queuePage = document.getElementById('queue-page');
+            const queueSearchRow = document.getElementById('queue-search-row');
             const queueList = document.getElementById('queue-list'); // Get reference to queue list
             const settingsBtn = document.getElementById('settings-btn'); // 獲取設定按鈕
 
@@ -856,6 +931,7 @@
                 if (settingsBtn) settingsBtn.style.display = 'block'; // 顯示設定按鈕
                 
                 if (queuePage) queuePage.style.display = 'none'; // 隱藏其他頁面
+                if (queueSearchRow) queueSearchRow.style.display = 'none'; // 隱藏佇列輸入框
                 if (queueList) queueList.innerHTML = ''; // 清空佇列列表內容
 
             } else if (pageName === 'queue') {
@@ -866,6 +942,7 @@
                 if (settingsBtn) settingsBtn.style.display = 'none'; // 隱藏設定按鈕
                 
                 if (queuePage) queuePage.style.display = 'flex'; // 顯示佇列頁面
+                if (queueSearchRow) queueSearchRow.style.display = 'flex'; // 顯示佇列輸入框
                 renderQueue(); // 渲染佇列內容
             }
         }
@@ -907,6 +984,35 @@
         }
 
         /**
+         * 處理佇列輸入框的Enter鍵按下。
+         */
+        function handleQueueInputKeyPress(event) {
+            if (event.key === 'Enter') {
+                downloadVideoFromQueue();
+            }
+        }
+        
+        /**
+         * 從佇列頁面下載影片。
+         */
+        function downloadVideoFromQueue() {
+            const urlInput = document.getElementById('queue-video-url');
+            const url = urlInput.value.trim();
+            
+            if (!url) {
+                showModal('錯誤', '請輸入影片網址');
+                return;
+            }
+            
+            // 與主頁一致：開啟影片資訊模態，讓使用者選擇格式再下載
+            try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
+            showVideoModal(url);
+            
+            // 清空輸入框
+            urlInput.value = '';
+        }
+
+        /**
          * 處理主頁面上的下載按鈕點擊。
          * 獲取影片資訊並顯示影片詳細資訊模態視窗。
          */
@@ -922,6 +1028,8 @@
             }
             // 立即顯示載入中，避免前一層阻塞繪製
             requestAnimationFrame(() => showLoading());
+            // 設置 currentUrl，避免之後確認下載時讀到空字串
+            try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
             showVideoModal(url);
         }
 
@@ -953,6 +1061,8 @@
          * @param {string} url - 影片網址。
          */
         function showVideoModal(url) {
+            // 記錄目前處理的網址供確認下載使用
+            try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
             const videoModalBg = document.getElementById('video-modal-bg');
             videoModalBg.style.display = 'flex';
             setTimeout(() => videoModalBg.classList.add('show'), 10);
@@ -1079,7 +1189,7 @@
                 };
                 window.__onVideoInfoError = function(error) {
                     console.error('獲取影片資訊時出錯:', error);
-                    showModal('錯誤', '顯示找不到影片，請確認網址是否輸入正確');
+                    showModal('錯誤', '找不到影片，請確認網址是否輸入正確');
                     closeVideoModal();
                     hideLoading();
                 };
@@ -1257,8 +1367,12 @@
          * 使用選定的選項呼叫 Python API。
          */
         async function confirmDownload() {
+            // 優先使用 showVideoModal 記錄的 currentUrl；若空才讀主頁輸入框
+            let url = (currentUrl || '').trim();
+            if (!url) {
             const urlInput = document.getElementById('video-url');
-            const url = urlInput.value.trim();
+                url = (urlInput && urlInput.value ? urlInput.value.trim() : '');
+            }
             const quality = currentQuality;
             const format = currentFormat;
 
@@ -1279,8 +1393,9 @@
                 filePath: '' // 新增檔案路徑，下載完成後會更新
             });
 
-            // 點擊下載後清空輸入框
-            urlInput.value = '';
+            // 清理輸入狀態
+            try { const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; } catch(e) {}
+            currentUrl = '';
 
             // 呼叫 Python API 開始下載 (在背景執行)
             // 將任務的ID傳遞給Python，以便Python可以回報進度
@@ -1454,8 +1569,24 @@
             }
         });
 
-        // 首次載入時，確保顯示主頁
+        // 首次載入時，綁定Enter事件並顯示主頁
         document.addEventListener('DOMContentLoaded', () => {
+            const homeInput = document.getElementById('video-url');
+            if (homeInput) {
+                homeInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        downloadVideo();
+                    }
+                });
+            }
+            const queueInput = document.getElementById('queue-video-url');
+            if (queueInput) {
+                queueInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        downloadVideoFromQueue();
+                    }
+                });
+            }
             showPage('home');
         });
     </script>

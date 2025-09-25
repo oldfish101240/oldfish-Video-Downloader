@@ -97,6 +97,30 @@ HTML = fr"""
             color: #e5e7eb;
             transition: background 0.3s ease, color 0.3s ease;
         }}
+        /* 全域卷軸樣式（Chromium/QtWebEngine） */
+        html, body, .main, .queue-list {{
+            scrollbar-width: thin; /* Firefox 後備 */
+            scrollbar-color: #4a4f59 #121418; /* 拇指/軌道：現代灰 */
+        }}
+        ::-webkit-scrollbar {{
+            width: 8px;  /* 更纖細 */
+            height: 8px;
+        }}
+        ::-webkit-scrollbar-track {{
+            background: #121418; /* 深色軌道 */
+        }}
+        ::-webkit-scrollbar-thumb {{
+            background: #3a3f4a; /* 中性深灰 */
+            border-radius: 6px;
+            border: 2px solid #121418; /* 與軌道留縫，視覺更輕 */
+        }}
+        ::-webkit-scrollbar-thumb:hover {{
+            background: #4a4f59; /* 略亮的灰色，避免過亮 */
+            border-color: #121418;
+        }}
+        ::-webkit-scrollbar-corner {{
+            background: #121418;
+        }}
         .container {{
             display: flex;
             height: 100vh;
@@ -169,6 +193,7 @@ HTML = fr"""
             align-items: center;
             justify-content: flex-start;
             position: relative;
+            overflow-y: auto; /* 讓主內容可滾動，配合 sticky 底部區 */
         }}
         .title-img {{
             margin-top: 60px;
@@ -262,6 +287,7 @@ HTML = fr"""
             display: flex; /* 讓其內容可以居中 */
             flex-direction: column;
             align-items: center;
+            justify-content: space-between; /* 上下分佈，讓底部輸入區靠底 */
         }}
         .modal-bg {{
             position: fixed;
@@ -500,6 +526,21 @@ HTML = fr"""
             background: #f5f5f5;
             color: #333;
         }}
+        /* 淺色主題的卷軸顏色 */
+        body.light-theme, body.light-theme .main, body.light-theme .queue-list {{
+            scrollbar-color: #b5b8bd #ededed; /* 淺色主題灰 */
+        }}
+        body.light-theme ::-webkit-scrollbar-track {{
+            background: #ededed;
+        }}
+        body.light-theme ::-webkit-scrollbar-thumb {{
+            background: #c7cad0; /* 中灰 */
+            border-color: #ededed;
+            border-radius: 6px;
+        }}
+        body.light-theme ::-webkit-scrollbar-thumb:hover {{
+            background: #b5b8bd; /* 稍深灰 */
+        }}
         body.light-theme .container {{
             background: #f5f5f5;
         }}
@@ -599,14 +640,37 @@ HTML = fr"""
         }}
 
         /* 新增佇列頁面樣式 */
+        .queue-search-row {{
+            width: 90%;
+            max-width: 600px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }}
+        
         .queue-list {{
             width: 90%; /* 調整列表寬度 */
             max-width: 800px; /* 最大寬度限制 */
-            margin-top: 30px; /* 距離頂部間距 */
             display: flex;
             flex-direction: column;
             align-items: center; /* 讓列表項居中 */
-            padding-bottom: 50px; /* 底部留白 */
+            padding-bottom: 110px; /* 下修預留高度，讓列表可視範圍更大 */
+        }}
+
+        .queue-bottom {{
+            position: sticky; /* 置於主內容底部，不覆蓋左側標籤列 */
+            bottom: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 0 12px; /* 縮小上下高度 */
+            background: #181a20; /* 與頁面一致，避免透出 */
+            z-index: 1200; /* 高於一般內容，低於模態視窗(>10000) */
+            box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
         }}
 
         .queue-item {{
@@ -709,7 +773,7 @@ HTML = fr"""
             max-width: 780px; /* 比項目略窄 */
             height: 1px;
             background-color: #3a3f4a;
-            margin: 20px auto; /* 居中並調整間距 */
+            margin: 0 auto 8px; /* 縮小與輸入區距離 */
         }}
         .queue-item-actions {{
             display: flex;
@@ -766,6 +830,14 @@ HTML = fr"""
             <div class="queue-page" id="queue-page"> <!-- 移除 hidden class，改由 JS 完全控制 -->
                 <div class="queue-list" id="queue-list">
                     <!-- 影片任務將會動態新增到這裡 -->
+                </div>
+                <div class="queue-bottom">
+                    <div class="queue-separator"></div>
+                    <!-- 佇列頁面的輸入框（置底置中） -->
+                    <div class="queue-search-row" id="queue-search-row">
+                        <input class="search-input" id="queue-video-url" type="text" placeholder="請輸入影片網址...">
+                        <button class="download-btn" onclick="downloadVideoFromQueue()">下載</button>
+                    </div>
                 </div>
             </div>
 
@@ -825,6 +897,8 @@ HTML = fr"""
     <script>
         // 儲存上次獲取的影片資訊以還原畫質選項
         let lastVideoInfo = null;
+        // 儲存目前正在處理的影片網址（從主頁或佇列進入）
+        let currentUrl = '';
 
         // MP3, AAC, FLAC, WAV 的音訊品質選項
         const AUDIO_QUALITIES = [
@@ -908,6 +982,7 @@ HTML = fr"""
             const titleImg = document.getElementById('title-img');
             const searchRow = document.getElementById('search-row');
             const queuePage = document.getElementById('queue-page');
+            const queueSearchRow = document.getElementById('queue-search-row');
             const queueList = document.getElementById('queue-list'); // Get reference to queue list
             const settingsBtn = document.getElementById('settings-btn'); // 獲取設定按鈕
 
@@ -919,6 +994,7 @@ HTML = fr"""
                 if (settingsBtn) settingsBtn.style.display = 'block'; // 顯示設定按鈕
                 
                 if (queuePage) queuePage.style.display = 'none'; // 隱藏其他頁面
+                if (queueSearchRow) queueSearchRow.style.display = 'none'; // 隱藏佇列輸入框
                 if (queueList) queueList.innerHTML = ''; // 清空佇列列表內容
 
             }} else if (pageName === 'queue') {{
@@ -929,6 +1005,7 @@ HTML = fr"""
                 if (settingsBtn) settingsBtn.style.display = 'none'; // 隱藏設定按鈕
                 
                 if (queuePage) queuePage.style.display = 'flex'; // 顯示佇列頁面
+                if (queueSearchRow) queueSearchRow.style.display = 'flex'; // 顯示佇列輸入框
                 renderQueue(); // 渲染佇列內容
             }}
         }}
@@ -970,6 +1047,35 @@ HTML = fr"""
         }}
 
         /**
+         * 處理佇列輸入框的Enter鍵按下。
+         */
+        function handleQueueInputKeyPress(event) {{
+            if (event.key === 'Enter') {{
+                downloadVideoFromQueue();
+            }}
+        }}
+        
+        /**
+         * 從佇列頁面下載影片。
+         */
+        function downloadVideoFromQueue() {{
+            const urlInput = document.getElementById('queue-video-url');
+            const url = urlInput.value.trim();
+            
+            if (!url) {{
+                showModal('錯誤', '請輸入影片網址');
+                return;
+            }}
+            
+            // 與主頁一致：開啟影片資訊模態，讓使用者選擇格式再下載
+            try {{ currentUrl = (url || '').trim(); }} catch(e) {{ currentUrl = ''; }}
+            showVideoModal(url);
+            
+            // 清空輸入框
+            urlInput.value = '';
+        }}
+
+        /**
          * 處理主頁面上的下載按鈕點擊。
          * 獲取影片資訊並顯示影片詳細資訊模態視窗。
          */
@@ -985,6 +1091,8 @@ HTML = fr"""
             }}
             // 立即顯示載入中，避免前一層阻塞繪製
             requestAnimationFrame(() => showLoading());
+            // 設置 currentUrl，避免之後確認下載時讀到空字串
+            try {{ currentUrl = (url || '').trim(); }} catch(e) {{ currentUrl = ''; }}
             showVideoModal(url);
         }}
 
@@ -1016,6 +1124,8 @@ HTML = fr"""
          * @param {{string}} url - 影片網址。
          */
         function showVideoModal(url) {{
+            // 記錄目前處理的網址供確認下載使用
+            try {{ currentUrl = (url || '').trim(); }} catch(e) {{ currentUrl = ''; }}
             const videoModalBg = document.getElementById('video-modal-bg');
             videoModalBg.style.display = 'flex';
             setTimeout(() => videoModalBg.classList.add('show'), 10);
@@ -1142,7 +1252,7 @@ HTML = fr"""
                 }};
                 window.__onVideoInfoError = function(error) {{
                     console.error('獲取影片資訊時出錯:', error);
-                    showModal('錯誤', '顯示找不到影片，請確認網址是否輸入正確');
+                    showModal('錯誤', '找不到影片，請確認網址是否輸入正確');
                     closeVideoModal();
                     hideLoading();
                 }};
@@ -1320,8 +1430,12 @@ HTML = fr"""
          * 使用選定的選項呼叫 Python API。
          */
         async function confirmDownload() {{
+            // 優先使用 showVideoModal 記錄的 currentUrl；若空才讀主頁輸入框
+            let url = (currentUrl || '').trim();
+            if (!url) {{
             const urlInput = document.getElementById('video-url');
-            const url = urlInput.value.trim();
+                url = (urlInput && urlInput.value ? urlInput.value.trim() : '');
+            }}
             const quality = currentQuality;
             const format = currentFormat;
 
@@ -1342,22 +1456,21 @@ HTML = fr"""
                 filePath: '' // 新增檔案路徑，下載完成後會更新
             }});
 
-            // 點擊下載後清空輸入框
-            urlInput.value = '';
+            // 清理輸入狀態
+            try {{ const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; }} catch(e) {{}}
+            currentUrl = '';
 
-            // 呼叫 Python API 開始下載 (在背景執行)
-            // 將任務的ID傳遞給Python，以便Python可以回報進度
-            window.pywebview.api.start_download(downloadQueue[downloadQueue.length - 1].id, url, quality, format)
-                .then(result => {{
-                    console.log("下載任務啟動結果:", result);
-                    // 這裡可以根據Python回傳的結果更新任務狀態
-                    // 例如：updateDownloadProgress(taskId, 100, '已完成');
-                }})
-                .catch(error => {{
-                    console.error("啟動下載任務時出錯:", error);
-                    // 如果啟動失敗，更新任務狀態為錯誤
-                    // 例如：updateDownloadProgress(taskId, 0, '錯誤');
-                }});
+            // 呼叫 Python API 開始下載 (排到下一個事件迴圈，讓 UI 先切頁)
+            setTimeout(() => {{
+                try {{
+                    const task = downloadQueue[downloadQueue.length - 1];
+                    window.pywebview.api.start_download(task.id, url, quality, format)
+                        .then(result => {{ console.log("下載任務啟動結果:", result); }})
+                        .catch(error => {{ console.error("啟動下載任務時出錯:", error); }});
+                }} catch (e) {{
+                    console.error("排程下載任務時出錯:", e);
+                }}
+            }}, 0);
         }}
 
         /**
@@ -1517,8 +1630,24 @@ HTML = fr"""
             }}
         }});
 
-        // 首次載入時，確保顯示主頁
+        // 首次載入時，綁定Enter事件並顯示主頁
         document.addEventListener('DOMContentLoaded', () => {{
+            const homeInput = document.getElementById('video-url');
+            if (homeInput) {{
+                homeInput.addEventListener('keypress', (e) => {{
+                    if (e.key === 'Enter') {{
+                        downloadVideo();
+                    }}
+                }});
+            }}
+            const queueInput = document.getElementById('queue-video-url');
+            if (queueInput) {{
+                queueInput.addEventListener('keypress', (e) => {{
+                    if (e.key === 'Enter') {{
+                        downloadVideoFromQueue();
+                    }}
+                }});
+            }}
             showPage('home');
         }});
     </script>
@@ -1542,11 +1671,13 @@ class Api(QObject):
         self.settings_process = None  # 追蹤設定視窗進程（單一進程）
         self._lock = threading.Lock() # 添加線程鎖
 
+    # 移除多客戶端探測，回歸 yt-dlp 預設行為以維持穩定性
+
     def _extract_video_info(self, url):
+        # 回到單一 yt-dlp 取得格式，與官方格式清單一致
         ydl_opts = {
             'quiet': True,
             'simulate': True,
-            'force_generic_extractor': True,
             'format': 'bestvideo+bestaudio/best',
             'ffmpeg_location': FFMPEG,
         }
@@ -1576,8 +1707,10 @@ class Api(QObject):
         has_mp4_video_audio = False
         has_mp3_audio = False
         has_any_audio = False
+        has_any_video = False
         for f in info_dict.get('formats', []):
             if f.get('vcodec') != 'none' and f.get('height'):
+                has_any_video = True
                 label = f"{f['height']}p"
                 ratio_str = ''
                 if f.get('width') and f.get('height'):
@@ -1599,9 +1732,10 @@ class Api(QObject):
                 has_mp3_audio = True
             if acodec != 'none':
                 has_any_audio = True
-        if has_mp4_video_audio:
-            formats.append({'value': 'mp4', 'label': 'mp4', 'desc': '影片+音訊'})
-        if has_mp3_audio or has_any_audio:
+        # 預設提供 mp4（影片）；若偵測到音訊，也提供 mp3（音訊）
+        if has_any_video:
+            formats.append({'value': 'mp4', 'label': 'mp4', 'desc': '影片'})
+        if has_any_audio:
             formats.append({'value': 'mp3', 'label': 'mp3', 'desc': '音訊'})
         def format_sort_key(f):
             desc_priority = {'影片+音訊': 2, '音訊': 1}
@@ -1778,32 +1912,32 @@ class Api(QObject):
             # 檢查是否已經有設定視窗在運行
             if self.settings_process is not None and self.settings_process.poll() is None:
                 debug_console("設定視窗已經開啟，嘗試調到該視窗")
-                # 設定視窗已經開啟，嘗試將焦點調到該視窗
+                # 使用進程 ID 查找視窗，避免依賴標題文字
                 try:
-                    # 嘗試將設定視窗調到最前面
                     import ctypes
-                    user32 = ctypes.windll.user32
-                    
-                    # 查找設定視窗
-                    def find_settings_window(hwnd, windows):
-                        if user32.IsWindowVisible(hwnd):
-                            length = user32.GetWindowTextLengthW(hwnd)
-                            if length > 0:
-                                buffer = ctypes.create_unicode_buffer(length + 1)
-                                user32.GetWindowTextW(hwnd, buffer, length + 1)
-                                if "設定" in buffer.value and "oldfish" in buffer.value:
-                                    windows.append(hwnd)
-                        return True
-                    
-                    windows = []
                     from ctypes import wintypes
+                    user32 = ctypes.windll.user32
+                    kernel32 = ctypes.windll.kernel32
+
+                    target_pid = self.settings_process.pid
+
                     EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-                    user32.EnumWindows(EnumWindowsProc(find_settings_window), 0)
-                    
-                    if windows:
-                        # 將視窗提到最前面
-                        user32.SetForegroundWindow(windows[0])
-                        user32.ShowWindow(windows[0], 9)  # SW_RESTORE
+
+                    hwnd_found = None
+                    def enum_proc(hwnd, lParam):
+                        nonlocal hwnd_found
+                        pid = wintypes.DWORD()
+                        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                        if pid.value == target_pid and user32.IsWindowVisible(hwnd):
+                            hwnd_found = hwnd
+                            return False  # stop enum
+                        return True
+
+                    user32.EnumWindows(EnumWindowsProc(enum_proc), 0)
+
+                    if hwnd_found:
+                        user32.SetForegroundWindow(hwnd_found)
+                        user32.ShowWindow(hwnd_found, 9)  # SW_RESTORE
                         info_console("設定視窗已調到最前面")
                         return "設定視窗已調到最前面"
                 except Exception as e:
@@ -1895,13 +2029,12 @@ class Api(QObject):
         """
         debug_console(f"取得影片資訊: {url}")
         try:
+            # 回到單一 yt-dlp 取得格式
             ydl_opts = {
                 'quiet': True,
                 'simulate': True,
-                'force_generic_extractor': True,
-                # 改進format參數，避免嘗試下載不可用的格式
                 'format': 'best[height<=1080]/bestaudio/best',
-                'ffmpeg_location': FFMPEG, # 明確指定 ffmpeg 路徑
+                'ffmpeg_location': FFMPEG,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(url, download=False)
@@ -1943,9 +2076,7 @@ class Api(QObject):
             debug_console(f"找到 {len(available_formats)} 個可用格式")
             
             for f in available_formats:
-                # 跳過明顯不可用的格式
-                if f.get('filesize') == 0 or f.get('filesize') is None:
-                    continue
+                # 不再以 filesize 判斷可用性，避免漏判
                     
                 # 影片畫質
                 if f.get('vcodec') != 'none' and f.get('height'):
@@ -1976,16 +2107,15 @@ class Api(QObject):
                 if acodec != 'none':
                     has_any_audio = True
 
-            # 確保僅有 mp4 (影片+音訊) 和 mp3 (音訊) 選項
-            # 如果原始資訊中沒有找到，則手動添加
-            if has_mp4_video_audio:
-                formats.append({"value": "mp4", "label": "mp4", "desc": "影片+音訊"})
-            if has_mp3_audio or has_any_audio:
+            # 與 _extract_video_info 對齊：預設提供 mp4（影片），若有音訊則提供 mp3（音訊）
+            # 保留 mp4，即使站點不是單檔 v+a，也由下載邏輯處理合併
+            formats.append({"value": "mp4", "label": "mp4", "desc": "影片"})
+            if has_any_audio:
                 formats.append({"value": "mp3", "label": "mp3", "desc": "音訊"})
 
-            # 格式排序：優先級 (影片+音訊 > 音訊)，然後按擴展名字母順序
+            # 格式排序：優先級 (影片 > 音訊)，然後按擴展名字母順序
             def format_sort_key(f):
-                desc_priority = {"影片+音訊": 2, "音訊": 1} # 調整優先級
+                desc_priority = {"影片": 2, "音訊": 1}
                 return (desc_priority.get(f['desc'], 0), f['value'])
 
             formats.sort(key=format_sort_key, reverse=True)
@@ -2058,16 +2188,54 @@ class Api(QObject):
                 'preferredquality': quality  # 這裡的 quality 是 kbps，yt-dlp 會處理
             })
         elif format_type == 'mp4':
-            # 只根據畫質選擇 mp4 格式，讓 yt-dlp 自動合併
+            # 依使用者選擇的解析度優先下載「相同高度」；若無則退而求其次
+            # 解析使用者選擇的品質字串，例如 "1080p"、"720p"
             try:
-                height = int(quality.replace("p", "").replace("K", "000"))
+                q = (quality or '').strip()
+                # 支援 '1080p'、'720'、'4K' 之類字樣
+                if 'K' in q.upper():
+                    num = int(''.join(ch for ch in q if ch.isdigit()))
+                    # 常見 K 對應：2K=1440, 4K=2160, 8K=4320；否則估算為 num*1000 再就近取常見值
+                    k_map = {2: 1440, 4: 2160, 8: 4320}
+                    height = k_map.get(num, max(144, num * 1000))
+                else:
+                    digits = ''.join(ch for ch in q if ch.isdigit())
+                    height = int(digits) if digits else 1080
                 if height <= 0:
                     height = 1080
-            except (ValueError, AttributeError) as e:
+            except Exception as e:
                 debug_console(f"畫質解析失敗: {e}，使用預設值1080")
                 height = 1080
-            # 改進format參數，使用更安全的選擇邏輯
-            ydl_opts['format'] = f'best[height<={height}][ext=mp4]/best[height<={height}]/best'
+
+            # 全新篩選：偏好 AVC/H.264 + AAC，精確高度優先，否則 <= 高度，再退最佳
+            try:
+                probe_opts = {
+                    'quiet': True,
+                    'simulate': True,
+                    'ffmpeg_location': FFMPEG,
+                }
+                with yt_dlp.YoutubeDL(probe_opts) as ydl_probe:
+                    info_probe = ydl_probe.extract_info(url, download=False)
+                fmts = info_probe.get('formats', []) or []
+                has_exact = any((f.get('vcodec') != 'none' and f.get('height') == height) for f in fmts)
+            except Exception as e:
+                debug_console(f"多客戶端探測失敗，改用泛化: {e}")
+                has_exact = False
+
+            fav_v = "(avc1|h264)"
+            fav_a = "(m4a|mp4a|aac)"
+            exact_chain = (
+                f"bv*[height={height}][vcodec~='{fav_v}']+ba[acodec~='{fav_a}']/"
+                f"bv*[height={height}]+ba/"
+                f"b[height={height}]"
+            )
+            le_chain = (
+                f"/bv*[height<={height}][vcodec~='{fav_v}']+ba[acodec~='{fav_a}']/"
+                f"bv*[height<={height}]+ba/"
+                f"b[height<={height}]"
+            )
+            tail = "/b/bestaudio"
+            ydl_opts['format'] = exact_chain + le_chain + tail
             ydl_opts['merge_output_format'] = 'mp4'
             postprocessors.append({
                 'key': 'FFmpegVideoConvertor',
@@ -2082,6 +2250,22 @@ class Api(QObject):
                 'concurrent_fragment_downloads': 4,
                 'noprogress': True,
             })
+
+            # 若沒有精確高度，提醒用戶會退階
+            try:
+                if not has_exact:
+                    warn_title = "解析度退階通知"
+                    warn_msg = (
+                        "因為找不到您選擇的解析度與封裝，\n"
+                        "已改為下載相容的畫質或封裝，並以 ffmpeg 合併/轉檔為 mp4。"
+                    )
+                    # 安全轉義
+                    import json as _json
+                    self._eval_js(
+                        f"showModal({_json.dumps(warn_title)}, {_json.dumps(warn_msg)})"
+                    )
+            except Exception:
+                pass
         else:
             # 默認情況，或者處理其他格式
             ydl_opts['format'] = 'best[ext=mp4]/best'
@@ -2382,11 +2566,17 @@ class Api(QObject):
             info_console("=" * 60)
             info_console(f"📁 {message}")
             info_console("=" * 60)
-            
+
             # 嘗試讓主視窗獲得焦點並顯示訊息
             try:
-                # 使用JavaScript在前端顯示通知
-                js_notification = f"""
+                # 使用JavaScript在前端顯示通知（樣式單例防重複）
+                import json as _json
+                _t = _json.dumps(title)
+                _m = _json.dumps(message)
+                js_notification = r"""
+                // 注入資料
+                const __OF_T = PLACEHOLDER_TITLE;
+                const __OF_M = PLACEHOLDER_MESSAGE;
                 // 創建通知元素
                 const notification = document.createElement('div');
                 notification.style.cssText = `
@@ -2404,55 +2594,56 @@ class Api(QObject):
                     max-width: 400px;
                     animation: slideIn 0.3s ease-out;
                 `;
-                
                 notification.innerHTML = `
-                    <div style="font-weight: bold; margin-bottom: 8px; font-size: 16px;">🎉 {title}</div>
-                    <div style="opacity: 0.9;">{message}</div>
+                    <div style="font-weight: bold; margin-bottom: 8px; font-size: 16px;">🎉 ${__OF_T}</div>
+                    <div style="opacity: 0.9;">${__OF_M}</div>
                 `;
-                
-                // 添加動畫樣式
-                const style = document.createElement('style');
-                style.textContent = `
-                    @keyframes slideIn {{
-                        from {{ transform: translateX(100%); opacity: 0; }}
-                        to {{ transform: translateX(0); opacity: 1; }}
-                    }}
-                `;
-                document.head.appendChild(style);
-                
+                // 添加動畫樣式（單例）
+                if (!document.getElementById('of-slide-keyframes')) {
+                  const style = document.createElement('style');
+                  style.id = 'of-slide-keyframes';
+                  style.textContent = `
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                  `;
+                  document.head.appendChild(style);
+                }
                 // 添加到頁面
                 document.body.appendChild(notification);
-                
                 // 自動移除通知
-                setTimeout(() => {{
+                setTimeout(() => {
                     notification.style.animation = 'slideOut 0.3s ease-in';
-                    setTimeout(() => {{
-                        if (notification.parentNode) {{
+                    setTimeout(() => {
+                        if (notification.parentNode) {
                             notification.parentNode.removeChild(notification);
-                        }}
-                    }}, 300);
-                }}, 5000);
-                
-                // 添加滑出動畫
-                const slideOutStyle = document.createElement('style');
-                slideOutStyle.textContent = `
-                    @keyframes slideOut {{
-                        from {{ transform: translateX(0); opacity: 1; }}
-                        to {{ transform: translateX(100%); opacity: 0; }}
-                    }}
-                `;
-                document.head.appendChild(slideOutStyle);
+                        }
+                    }, 300);
+                }, 5000);
+                // 添加滑出動畫（單例）
+                if (!document.getElementById('of-slideout-keyframes')) {
+                  const slideOutStyle = document.createElement('style');
+                  slideOutStyle.id = 'of-slideout-keyframes';
+                  slideOutStyle.textContent = `
+                    @keyframes slideOut {
+                        from { transform: translateX(0); opacity: 1; }
+                        to { transform: translateX(100%); opacity: 0; }
+                    }
+                  `;
+                  document.head.appendChild(slideOutStyle);
+                }
                 """
-                
+                js_notification = js_notification.replace('PLACEHOLDER_TITLE', _t).replace('PLACEHOLDER_MESSAGE', _m)
+
                 # 執行JavaScript通知
                 self._eval_js(js_notification)
                 debug_console("前端視覺通知已執行")
-                
             except Exception as e:
                 debug_console(f"前端通知失敗: {e}")
-            
+
             return True
-            
+
         except Exception as e:
             debug_console(f"視覺通知失敗: {e}")
             return False
@@ -2460,23 +2651,10 @@ class Api(QObject):
 # 創建 pywebview 視窗
 if __name__ == '__main__':
     # 將 HTML 寫入 main.html
-    main_html_path = os.path.join(ROOT_DIR, "main.html")
+    # 直接使用專案內的 main/main.html（不再覆蓋根目錄）
+    main_html_path = os.path.join(ROOT_DIR, "main", "main.html")
 
-    # 檢查檔案是否存在，如果存在則刪除
-    if os.path.exists(main_html_path):
-        try:
-            os.remove(main_html_path)
-            info_console(f"已刪除現有的 main.html 檔案: {main_html_path}")
-        except OSError as e:
-            error_console(f"刪除 main.html 檔案時出錯: {e}")
-
-    # 寫入 HTML
-    try:
-        with open(main_html_path, "w", encoding="utf-8") as f:
-            f.write(HTML)
-        debug_console(f"HTML已寫入: {main_html_path}")
-    except IOError as e:
-        error_console(f"寫入 main.html 檔案時出錯: {e}")
+    # 不再動態覆寫 main.html，直接載入現有檔案
 
     # 啟動 PySide6/QtWebEngine 應用
     app = QApplication(sys.argv)
@@ -2533,10 +2711,92 @@ if __name__ == '__main__':
     
     main_window.closeEvent = close_event_handler
 
-    # 載入本地 HTML
-    view.load(QUrl.fromLocalFile(main_html_path))
+    # 優先載入檔案（確保資源路徑與最新前端一致）；若不存在則回退到內嵌 HTML
+    base_dir = os.path.join(ROOT_DIR, 'main')
+    main_html_path = os.path.join(base_dir, 'main.html')
+    if os.path.exists(main_html_path):
+        try:
+            with open(main_html_path, 'r', encoding='utf-8') as f:
+                html_str = f.read()
+        except Exception as e:
+            error_console(f"讀取 main/main.html 失敗: {e}")
+            html_str = HTML
+        # 將 baseUrl 指向 ROOT_DIR，讓相對的 assets/ 指向 {ROOT_DIR}/assets
+        base_url = QUrl.fromLocalFile(ROOT_DIR + os.sep)
+        view.setHtml(html_str, base_url)
+    else:
+        # 回退到內嵌 HTML，同樣以 ROOT_DIR 為基準解析資源
+        base_url = QUrl.fromLocalFile(ROOT_DIR + os.sep)
+        view.setHtml(HTML, base_url)
+
+    # 頁面載入完成後注入版本號與樣式，並隨頁面切換顯示/隱藏
+    def on_load_finished(ok):
+        if not ok:
+            return
+        js = r"""
+        (function(){
+            try {
+                var styleId = 'of-version-style';
+                if (!document.getElementById(styleId)) {
+                    var st = document.createElement('style');
+                    st.id = styleId;
+                    st.textContent = 
+                        ".version-tag{position:absolute;left:12px;bottom:8px;font-size:12px;color:#888;user-select:none;pointer-events:none;}" +
+                        "body.light-theme .version-tag{color:#666;}";
+                    document.head.appendChild(st);
+                }
+
+                var mainEl = document.querySelector('.main') || document.body;
+                if (mainEl && !document.getElementById('version-tag')) {
+                    var div = document.createElement('div');
+                    div.className = 'version-tag';
+                    div.id = 'version-tag';
+                    div.textContent = '2.0.0-beta2';
+                    mainEl.appendChild(div);
+                }
+
+                // 依目前選單狀態設定初始顯示
+                var vt = document.getElementById('version-tag');
+                if (vt) {
+                    // 不只依賴 showPage：同時看 home 元素可視狀態
+                    var titleImg = document.getElementById('title-img');
+                    var searchRow = document.getElementById('search-row');
+                    var visible = (titleImg && titleImg.style.display !== 'none') || (searchRow && searchRow.style.display !== 'none');
+                    vt.style.display = visible ? 'block' : 'none';
+                }
+
+                // 包裝 showPage，在頁面切換時同步切換版本號可見性
+                if (!window.__ofPatchedShowPage && typeof window.showPage === 'function') {
+                    window.__ofPatchedShowPage = true;
+                    var _orig = window.showPage;
+                    window.showPage = function(p){
+                        try { _orig(p); } finally {
+                            var vt2 = document.getElementById('version-tag');
+                            if (vt2) {
+                                var titleImg2 = document.getElementById('title-img');
+                                var searchRow2 = document.getElementById('search-row');
+                                var visible2 = (p === 'home') || (titleImg2 && titleImg2.style.display !== 'none') || (searchRow2 && searchRow2.style.display !== 'none');
+                                vt2.style.display = visible2 ? 'block' : 'none';
+                            }
+                        }
+                    };
+                }
+            } catch (e) {
+                console.error('inject version failed:', e);
+            }
+        })();
+        """
+        # 確保 DOM ready 再執行通知插入
+        view.page().runJavaScript(
+            "document.readyState",
+            lambda state: view.page().runJavaScript(js) if state in ['interactive', 'complete'] else view.page().runJavaScript(
+                "document.addEventListener('DOMContentLoaded', function(){" + js + "});"
+            )
+        )
+
+    view.loadFinished.connect(on_load_finished)
     main_window.setCentralWidget(view)
-    main_window.resize(900, 700)
+    main_window.resize(1000, 640)
     main_window.show()
 
     sys.exit(app.exec())
