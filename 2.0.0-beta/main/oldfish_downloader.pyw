@@ -1951,7 +1951,7 @@ class Api(QObject):
             
             if os.path.exists(settings_path):
                 # 使用當前Python環境啟動設定視窗
-                python_exe = os.path.join(ROOT_DIR, 'python_embed', 'python.exe')
+                python_exe = os.path.join(ROOT_DIR, 'python_embed', 'pythonw.exe')
                 if not os.path.exists(python_exe):
                     python_exe = sys.executable
                 
