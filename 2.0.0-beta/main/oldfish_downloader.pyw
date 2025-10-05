@@ -13,6 +13,7 @@ import subprocess # 導入 subprocess 模組用於開啟檔案位置
 import hashlib
 import urllib.request
 import json
+import re
 
 class AnsiCodes:
     OKBLUE = '\033[94m'
@@ -44,6 +45,30 @@ def end_progress_line():
         sys.stdout.flush()
     except Exception:
         pass
+
+def compare_versions(version1, version2):
+    """比較兩個版本號，返回 -1, 0, 1 分別表示 version1 <, =, > version2"""
+    def version_tuple(v):
+        # 將版本號轉換為元組，例如 "1.2.3" -> (1, 2, 3)
+        parts = []
+        for part in v.split('.'):
+            # 移除非數字字符，只保留數字部分
+            numeric_part = re.sub(r'[^\d]', '', part)
+            if numeric_part:
+                parts.append(int(numeric_part))
+            else:
+                parts.append(0)
+        return tuple(parts)
+    
+    v1_tuple = version_tuple(version1)
+    v2_tuple = version_tuple(version2)
+    
+    if v1_tuple < v2_tuple:
+        return -1
+    elif v1_tuple > v2_tuple:
+        return 1
+    else:
+        return 0
 
 debug_console("啟動 oldfish影片下載器...")
 
@@ -1670,6 +1695,8 @@ class Api(QObject):
         self.completed_tasks = set()
         self.settings_process = None  # 追蹤設定視窗進程（單一進程）
         self._lock = threading.Lock() # 添加線程鎖
+        self.task_has_postprocessing = {}  # task_id -> bool：是否包含轉檔/後處理
+        self.task_in_postprocessing = {}    # task_id -> bool：是否已進入轉檔階段
 
     # 移除多客戶端探測，回歸 yt-dlp 預設行為以維持穩定性
 
@@ -1828,70 +1855,84 @@ class Api(QObject):
             progress_console(f"任務 {task_id}: {status} {percent:.1f}%")
 
         elif d['status'] == 'finished':
-            # 下載完成
+            # 下載完成；若存在後處理（轉檔/合併），延後完成通知到後處理完成
             debug_console(f"【任務{task_id}】檢測到下載完成狀態: {d}")
-            
-            # yt-dlp 在 finished 狀態下會提供最終檔案路徑
-            filepath = d.get('filepath', '')
-            if not filepath: # 備用方案，如果 filepath 不存在
-                filename = d.get('filename')
-                if filename:
-                    filepath = os.path.join(ROOT_DIR, 'downloads', filename)
-            
-            debug_console(f"【任務{task_id}】最終檔案路徑: {filepath}")
-            
-            self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{filepath.replace(os.sep, '/')}')") # 將路徑傳遞給前端
-            end_progress_line()
-            info_console(f"任務 {task_id}: 下載完成 - {d['filename']}")
-            
-            # 下載完成通知
-            debug_console(f"【任務{task_id}】開始處理下載完成通知")
-            try:
-                settings = self.load_settings()
-                debug_console(f"【任務{task_id}】載入設定: {settings}")
-                debug_console(f"【任務{task_id}】下載完成通知設定檢查: enableNotifications = {settings.get('enableNotifications', True)}")
-                
-                if settings.get('enableNotifications', True):
-                    filename = d.get('filename', '未知檔案')
-                    # 只提取檔案名稱，不包含路徑
-                    if os.path.sep in filename:
-                        filename = os.path.basename(filename)
-                    
-                    title = "下載完成"
-                    message = f"影片已成功下載：{filename}"
-                    debug_console(f"【任務{task_id}】準備發送通知: {title} - {message}")
-                    
-                    # 強制發送通知
-                    debug_console(f"【任務{task_id}】調用show_notification方法")
-                    self.show_notification(title, message)
-                    debug_console(f"【任務{task_id}】show_notification方法調用完成")
-                    
-                    info_console(f"影片下載完成：{filename}")
-                else:
-                    debug_console(f"【任務{task_id}】通知已停用，跳過通知")
-            except Exception as e:
-                debug_console(f"【任務{task_id}】處理下載完成通知失敗: {e}")
-                import traceback
-                debug_console(f"【任務{task_id}】錯誤詳情: {traceback.format_exc()}")
-                filename = d.get('filename', '未知檔案')
-                info_console(f"影片下載完成：{filename}")
-            
-            # 線程安全的添加完成任務
+
             try:
                 with self._lock:
-                    self.completed_tasks.add(task_id)
+                    has_post = self.task_has_postprocessing.get(task_id, False)
             except Exception:
-                pass
+                has_post = False
+
+            # 推導檔案路徑
+            filepath = d.get('filepath') or d.get('filename') or ''
+            if filepath and not os.path.isabs(filepath):
+                # 嘗試解析為 downloads 目錄下
+                filepath = os.path.join(ROOT_DIR, 'downloads', filepath)
+            filepath = filepath or ''
+            debug_console(f"【任務{task_id}】最終檔案路徑(可能尚未最終化): {filepath}")
+
+            if has_post:
+                # 標記轉檔中，不發送完成通知
+                self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '轉檔中', '', '{filepath.replace(os.sep, '/') if filepath else ''}')")
+                try:
+                    with self._lock:
+                        self.task_in_postprocessing[task_id] = True
+                except Exception:
+                    pass
+                debug_console(f"【任務{task_id}】含後處理，等待 postprocessor 完成後再通知")
+            else:
+                # 無後處理，直接視為完成
+                self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{filepath.replace(os.sep, '/') if filepath else ''}')")
+                end_progress_line()
+                info_console(f"任務 {task_id}: 下載完成 - {d.get('filename', '')}")
+                self._notify_download_complete_safely(d, task_id)
         elif d['status'] == 'error':
             # 下載錯誤
             self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '錯誤', '{d.get('error', '未知錯誤')}');")
             end_progress_line()
             error_console(f"任務 {task_id}: 下載錯誤 - {d.get('error', '未知錯誤')}")
         else:
-            # 其他狀態
-            self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '{d['status']}');")
-            end_progress_line()
-            debug_console(f"任務 {task_id}: 狀態 - {d['status']}")
+            # 其他狀態：嘗試辨識後處理階段
+            status_text = d.get('status', '')
+            if isinstance(status_text, str) and status_text.lower().startswith('post'):  # e.g. 'postprocessing'
+                # 標記已進入轉檔；避免前端再以「下載中」覆蓋
+                try:
+                    with self._lock:
+                        self.task_in_postprocessing[task_id] = True
+                except Exception:
+                    pass
+                self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '轉檔中');")
+                debug_console(f"任務 {task_id}: 轉檔中")
+            else:
+                # 若已進入轉檔階段，保持顯示「轉檔中」
+                try:
+                    with self._lock:
+                        in_post = self.task_in_postprocessing.get(task_id, False)
+                except Exception:
+                    in_post = False
+                if in_post:
+                    self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '轉檔中');")
+                else:
+                    self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '{d['status']}');")
+                debug_console(f"任務 {task_id}: 狀態 - {d['status']}")
+    def _notify_download_complete_safely(self, d, task_id):
+        """統一的完成通知流程，避免重覆與例外中斷。"""
+        try:
+            settings = self.load_settings()
+            if not settings.get('enableNotifications', True):
+                return
+            filename = d.get('filename') if isinstance(d, dict) else None
+            if not filename:
+                filename = '已完成的下載'
+            if os.path.sep in filename:
+                filename = os.path.basename(filename)
+            title = "下載完成"
+            message = f"影片已成功下載：{filename}"
+            self.show_notification(title, message)
+            info_console(f"影片下載完成：{filename}")
+        except Exception as e:
+            debug_console(f"完成通知失敗: {e}")
 
 
     @Slot(str, result=str)
@@ -1993,6 +2034,583 @@ class Api(QObject):
         except Exception as e:
             error_console(f"關閉設定視窗失敗: {e}")
             return f"關閉設定視窗失敗: {e}"
+
+    def check_ytdlp_version(self):
+        """檢查 yt-dlp 是否為最新版本"""
+        try:
+            # 取得目前安裝的版本
+            current_version = yt_dlp.version.__version__
+            debug_console(f"目前 yt-dlp 版本: {current_version}")
+            
+            # 從 PyPI 取得最新版本資訊
+            try:
+                import urllib.request
+                import json
+                
+                url = "https://pypi.org/pypi/yt-dlp/json"
+                with urllib.request.urlopen(url, timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                    latest_version = data['info']['version']
+                    debug_console(f"最新 yt-dlp 版本: {latest_version}")
+                    
+                    # 比較版本
+                    if compare_versions(current_version, latest_version) < 0:
+                        return {
+                            'update_available': True,
+                            'current_version': current_version,
+                            'latest_version': latest_version
+                        }
+                    else:
+                        debug_console("yt-dlp 已是最新版本")
+                        return {
+                            'update_available': False,
+                            'current_version': current_version,
+                            'latest_version': latest_version
+                        }
+            except Exception as e:
+                debug_console(f"檢查最新版本失敗: {e}")
+                return None
+                
+        except Exception as e:
+            error_console(f"版本檢查失敗: {e}")
+            return None
+
+    def update_ytdlp(self):
+        """更新 yt-dlp 到最新版本"""
+        try:
+            debug_console("開始更新 yt-dlp...")
+            
+            # 使用 pip 更新 yt-dlp
+            python_exe = os.path.join(ROOT_DIR, "python_embed", "python.exe")
+            if not os.path.exists(python_exe):
+                python_exe = sys.executable
+            
+            result = subprocess.run([
+                python_exe, "-m", "pip", "install", "--upgrade", "yt-dlp"
+            ], capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0:
+                info_console("yt-dlp 更新成功")
+                return True
+            else:
+                error_console(f"yt-dlp 更新失敗: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            error_console("yt-dlp 更新超時")
+            return False
+        except Exception as e:
+            error_console(f"更新 yt-dlp 失敗: {e}")
+            return False
+
+    @Slot()
+    def startYtDlpUpdate(self):
+        """由前端呼叫，啟動 yt-dlp 更新（背景執行並回報進度）"""
+        def run_update():
+            try:
+                # 初始化進度 UI（若前端已建立，這裡只做保險）
+                self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(0, '開始更新…');")
+
+                # 準備 Python 可執行檔
+                python_exe = os.path.join(ROOT_DIR, "python_embed", "python.exe")
+                if not os.path.exists(python_exe):
+                    python_exe = sys.executable
+
+                # 啟動 pip 更新
+                cmd = [
+                    python_exe, "-m", "pip", "install", "--upgrade", "yt-dlp",
+                    "--disable-pip-version-check"
+                ]
+                debug_console(f"執行更新命令: {' '.join(cmd)}")
+
+                with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as proc:
+                    progress = 3
+                    last_emit_time = 0
+                    for line in proc.stdout:
+                        ln = line.strip()
+                        if not ln:
+                            continue
+                        # 粗略偵測階段關鍵詞，更新提示文字
+                        lower = ln.lower()
+                        if 'collecting' in lower or 'downloading' in lower:
+                            self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(undefined, '正在下載套件…');")
+                            progress = max(progress, 10)
+                        elif 'installing collected packages' in lower:
+                            self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(undefined, '正在安裝…');")
+                            progress = max(progress, 60)
+                        elif 'successfully installed' in lower or 'already satisfied' in lower:
+                            progress = max(progress, 95)
+                        # 逐步推進條（節流傳送）
+                        now = time.time()
+                        if now - last_emit_time > 0.2:
+                            progress = min(progress + 1, 97)
+                            self._eval_js(f"window.__ofUpdateProgress && window.__ofUpdateProgress({progress}, undefined);")
+                            last_emit_time = now
+
+                    ret = proc.wait()
+                    if ret == 0:
+                        self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
+                        # 顯示完成與重啟選項
+                        self._eval_js(
+                            "window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 已成功更新到最新版本！');"
+                        )
+                    else:
+                        self._eval_js(
+                            "window.__ofUpdateDone && window.__ofUpdateDone(false, 'yt-dlp 更新失敗，請稍後再試或手動更新。');"
+                        )
+            except Exception as e:
+                error_console(f"更新執行失敗: {e}")
+                self._eval_js(
+                    f"window.__ofUpdateDone && window.__ofUpdateDone(false, '更新過程發生錯誤：{str(e).replace('\\', '/')}');"
+                )
+
+        threading.Thread(target=run_update, daemon=True).start()
+
+    @Slot()
+    def restartApp(self):
+        """嘗試重新啟動應用程式。若有封裝的 exe 則優先重啟 exe。"""
+        try:
+            # 可能的 exe 路徑（在 main 目錄上一層）
+            exe_path = os.path.normpath(os.path.join(ROOT_DIR, os.pardir, 'oldfish影片下載器.exe'))
+            started = False
+            if os.path.exists(exe_path):
+                debug_console(f"嘗試啟動 exe: {exe_path}")
+                subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path))
+                started = True
+            else:
+                # 退而求其次：重啟目前 Python 腳本
+                pyw = os.path.normpath(os.path.join(ROOT_DIR, 'oldfish_downloader.pyw'))
+                pythonw = os.path.join(ROOT_DIR, 'python_embed', 'pythonw.exe')
+                if os.path.exists(pythonw) and os.path.exists(pyw):
+                    subprocess.Popen([pythonw, pyw], cwd=os.path.dirname(pyw))
+                    started = True
+
+            # 關閉目前應用
+            from PySide6.QtWidgets import QApplication
+            if started:
+                QApplication.quit()
+            else:
+                # 若未能啟動新程序，只提示
+                self._eval_js(
+                    "alert('更新完成，請手動重新啟動應用程式。');"
+                )
+        except Exception as e:
+            error_console(f"重啟應用失敗: {e}")
+            self._eval_js(
+                f"alert('重啟失敗：{str(e).replace('\\', '/')}');"
+            )
+
+    def show_update_dialog(self, version_info):
+        """顯示更新對話框"""
+        try:
+            current_version = version_info['current_version']
+            latest_version = version_info['latest_version']
+            
+            # 創建 HTML 更新對話框
+            dialog_html = f"""
+            (function() {{
+                // 創建覆蓋層
+                const overlay = document.createElement('div');
+                overlay.id = 'update-dialog-overlay';
+                overlay.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0, 0, 0, 0.7);
+                    z-index: 10000;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                `;
+                
+                // 創建對話框
+                const dialog = document.createElement('div');
+                dialog.id = 'update-dialog';
+                dialog.style.cssText = `
+                    background: #23262f;
+                    border-radius: 16px;
+                    padding: 32px;
+                    max-width: 420px;
+                    width: 90%;
+                    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+                    border: 1px solid #444;
+                `;
+                
+                // 創建標題區域
+                const titleDiv = document.createElement('div');
+                titleDiv.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 16px;
+                `;
+                
+                const iconDiv = document.createElement('div');
+                iconDiv.style.cssText = `
+                    width: 48px;
+                    height: 48px;
+                    background: #2ecc71;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-right: 16px;
+                    box-shadow: 0 0 6px #27ae60;
+                `;
+                iconDiv.innerHTML = '<img src="assets/update.png" alt="update" style="width:24px;height:24px;object-fit:contain;filter:brightness(1);">';
+                
+                const title = document.createElement('h3');
+                title.style.cssText = `
+                    margin: 0;
+                    color: #e5e7eb;
+                    font-size: 20px;
+                    font-weight: bold;
+                `;
+                title.textContent = 'yt-dlp 更新提醒';
+                
+                titleDiv.appendChild(iconDiv);
+                titleDiv.appendChild(title);
+                
+                // 創建描述文字
+                const desc = document.createElement('p');
+                desc.style.cssText = `
+                    color: #e5e7eb;
+                    margin: 0 0 24px 0;
+                    line-height: 1.5;
+                    font-size: 16px;
+                    font-weight: 600;
+                `;
+                desc.textContent = '發現 yt-dlp 新版本！';
+                
+                // 創建版本資訊區域
+                const versionDiv = document.createElement('div');
+                versionDiv.style.cssText = `
+                    background: #181a20;
+                    border-radius: 12px;
+                    padding: 18px;
+                    margin-bottom: 24px;
+                    border: 1px solid #444;
+                `;
+                
+                const currentVersionDiv = document.createElement('div');
+                currentVersionDiv.style.cssText = 'margin-bottom: 12px;';
+                currentVersionDiv.innerHTML = `
+                    <span style="color: #aaa; font-size: 15px;">目前版本:</span>
+                    <span style="color: #e5e7eb; font-weight: 500; margin-left: 12px;">{current_version}</span>
+                `;
+                
+                const latestVersionDiv = document.createElement('div');
+                latestVersionDiv.innerHTML = `
+                    <span style="color: #aaa; font-size: 15px;">最新版本:</span>
+                    <span style="color: #2ecc71; font-weight: 500; margin-left: 12px;">{latest_version}</span>
+                `;
+                
+                versionDiv.appendChild(currentVersionDiv);
+                versionDiv.appendChild(latestVersionDiv);
+                
+                // 第一行：詢問句
+                const question = document.createElement('p');
+                question.style.cssText = `
+                    color: #e5e7eb;
+                    margin: 16px 0 8px 0;
+                    font-size: 15px;
+                    font-weight: 600;
+                `;
+                question.textContent = '是否要更新到最新版本？';
+
+                // 第二行：左側提示小字（單獨一行）
+                const actionsRow = document.createElement('div');
+                actionsRow.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-start;
+                    gap: 16px;
+                    margin: 0 0 8px 0;
+                `;
+
+                const note = document.createElement('p');
+                note.style.cssText = `
+                    color: #888;
+                    margin: 0;
+                    font-size: 12px;
+                    line-height: 1.4;
+                    font-style: italic;
+                    flex: 1;
+                `;
+                note.textContent = '※yt-dlp為下載器的重要核心元件，建議更新以避免錯誤及獲得更好的使用體驗';
+                
+                // 第三行：按鈕區域（單獨一行，靠右）
+                const buttonDiv = document.createElement('div');
+                buttonDiv.style.cssText = `
+                    display: flex;
+                    gap: 16px;
+                    justify-content: flex-end;
+                    margin: 0 0 24px 0;
+                `;
+                
+                const skipBtn = document.createElement('button');
+                skipBtn.id = 'skip-update-btn';
+                skipBtn.style.cssText = `
+                    background: #23262f;
+                    color: #e5e7eb;
+                    border: 1px solid #444;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 15px;
+                    font-weight: 500;
+                    transition: all 0.2s ease;
+                `;
+                skipBtn.textContent = '稍後提醒';
+                skipBtn.onmouseover = function() {{ 
+                    this.style.background = '#2b2e37';
+                    this.style.borderColor = '#2ecc71';
+                }};
+                skipBtn.onmouseout = function() {{ 
+                    this.style.background = '#23262f';
+                    this.style.borderColor = '#444';
+                }};
+                
+                const updateBtn = document.createElement('button');
+                updateBtn.id = 'update-now-btn';
+                updateBtn.style.cssText = `
+                    background: #27ae60;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 15px;
+                    font-weight: bold;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+                `;
+                updateBtn.textContent = '立即更新';
+                updateBtn.onmouseover = function() {{ 
+                    this.style.background = '#219150';
+                    this.style.transform = 'scale(1.03)';
+                    this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                }};
+                updateBtn.onmouseout = function() {{ 
+                    this.style.background = '#27ae60';
+                    this.style.transform = 'scale(1)';
+                    this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.2)';
+                }};
+                
+                buttonDiv.appendChild(skipBtn);
+                buttonDiv.appendChild(updateBtn);
+
+                // 第二行組裝：只放提示小字
+                actionsRow.appendChild(note);
+
+                // 組裝對話框
+                dialog.appendChild(titleDiv);
+                dialog.appendChild(desc);
+                dialog.appendChild(versionDiv);
+                dialog.appendChild(question);
+                dialog.appendChild(actionsRow);
+                dialog.appendChild(buttonDiv);
+                overlay.appendChild(dialog);
+                
+                // 添加到頁面
+                document.body.appendChild(overlay);
+                
+                // 添加事件監聽器
+                updateBtn.addEventListener('click', function() {{
+                    overlay.remove();
+                    // 直接執行更新流程
+                    window.__executeUpdate();
+                }});
+                
+                skipBtn.addEventListener('click', function() {{
+                    overlay.remove();
+                }});
+                
+                // 點擊背景關閉對話框
+                overlay.addEventListener('click', function(e) {{
+                    if (e.target === this) {{
+                        this.remove();
+                        if (window.__onUpdateDialogResult) {{
+                            window.__onUpdateDialogResult('skip');
+                        }}
+                    }}
+                }});
+            }})();
+            """
+            
+            # 設置更新執行函數
+            update_js = """
+            window.__executeUpdate = function() {
+                // 顯示更新進度對話框
+                const progressOverlay = document.createElement('div');
+                progressOverlay.id = 'update-progress-overlay';
+                progressOverlay.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0, 0, 0, 0.7);
+                    z-index: 10001;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                `;
+                
+                const progressDialog = document.createElement('div');
+                progressDialog.style.cssText = `
+                    background: #23262f;
+                    border-radius: 16px;
+                    padding: 32px;
+                    max-width: 380px;
+                    width: 90%;
+                    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+                    border: 1px solid #444;
+                    text-align: center;
+                `;
+                
+                // 動態建立內容（含進度條與提示）
+                const spinner = document.createElement('div');
+                spinner.style.cssText = `width:56px;height:56px;background:#2ecc71;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px auto;animation:spin 1s linear infinite;box-shadow:0 0 6px #27ae60;`;
+                spinner.innerHTML = '<img src="assets/update.png" alt="updating" style="width:28px;height:28px;object-fit:contain;filter:brightness(10);">';
+                const titleEl = document.createElement('h3');
+                titleEl.style.cssText = 'margin:0 0 10px 0;color:#e5e7eb;font-size:20px;font-weight:bold;';
+                titleEl.textContent = '正在更新 yt-dlp';
+                const tipEl = document.createElement('p');
+                tipEl.style.cssText = 'color:#aaa;margin:0 0 12px 0;font-size:14px;';
+                tipEl.id = 'of-update-tip';
+                tipEl.textContent = '正在準備…';
+                const barWrap = document.createElement('div');
+                barWrap.style.cssText = 'height:8px;background:#181a20;border:1px solid #444;border-radius:6px;overflow:hidden;';
+                const bar = document.createElement('div');
+                bar.id = 'of-update-bar';
+                bar.style.cssText = 'height:100%;width:0%;background:#27ae60;transition:width .2s ease;';
+                barWrap.appendChild(bar);
+                progressDialog.appendChild(spinner);
+                progressDialog.appendChild(titleEl);
+                progressDialog.appendChild(tipEl);
+                progressDialog.appendChild(barWrap);
+                
+                progressOverlay.appendChild(progressDialog);
+                document.body.appendChild(progressOverlay);
+                
+                // 添加旋轉動畫樣式
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes spin {
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                // 提供前端可被後端呼叫來更新進度/提示
+                window.__ofUpdateProgress = function(percent, tipText){
+                    try {
+                        if (typeof percent === 'number') {
+                            const el = document.getElementById('of-update-bar');
+                            if (el) el.style.width = Math.max(0, Math.min(100, percent)) + '%';
+                        }
+                        if (typeof tipText === 'string') {
+                            const t = document.getElementById('of-update-tip');
+                            if (t) t.textContent = tipText;
+                        }
+                    } catch(_){}
+                };
+
+                window.__ofUpdateDone = function(success, message){
+                    try { document.getElementById('update-progress-overlay')?.remove(); } catch(_){}
+                    const overlay = document.createElement('div');
+                    overlay.id = 'update-success-overlay';
+                    overlay.style.cssText = `position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:10002; display:flex; align-items:center; justify-content:center; font-family:'Segoe UI',Arial,sans-serif;`;
+                    const dialog = document.createElement('div');
+                    dialog.style.cssText = `background:#23262f; border-radius:16px; padding:32px; max-width:420px; width:90%; box-shadow:0 4px 24px rgba(0,0,0,.3); border:1px solid #444; text-align:center;`;
+                    const badge = document.createElement('div');
+                    badge.style.cssText = `width:68px; height:68px; border-radius:50%; margin:0 auto 16px auto; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px ${'${success?"#27ae60":"#c0392b"}'}; background:${'${success?"#2ecc71":"#e74c3c"}'}; color:#fff; font-size:28px;`;
+                    // 使用對應圖示
+                    badge.textContent = '';
+                    const img = document.createElement('img');
+                    img.alt = success ? 'updated' : 'failed';
+                    img.src = success ? 'assets/updated.png' : 'assets/update.png';
+                    img.style.cssText = 'width:36px;height:36px;object-fit:contain;filter:brightness(10);';
+                    badge.appendChild(img);
+                    const title = document.createElement('h3');
+                    title.style.cssText = 'margin:0 0 10px 0; color:#e5e7eb; font-size:20px; font-weight:bold;';
+                    title.textContent = success ? '更新完成' : '更新失敗';
+                    const text = document.createElement('p');
+                    text.style.cssText = 'color:#aaa; margin:0 0 16px 0; font-size:14px;';
+                    text.textContent = message || (success ? 'yt-dlp 已更新至最新版本。' : '請稍後再試或手動更新。');
+                    const hint = document.createElement('p');
+                    hint.style.cssText = 'color:#888; margin:0 0 20px 0; font-size:12px; font-style:italic;';
+                    hint.textContent = success ? '更新已完成，為確保生效，建議重新啟動應用程式。' : '';
+                    const btnRow = document.createElement('div');
+                    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:12px;';
+                    const laterBtn = document.createElement('button');
+                    laterBtn.textContent = success ? '稍後' : '關閉';
+                    laterBtn.style.cssText = 'background:#23262f; color:#e5e7eb; border:1px solid #444; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px;';
+                    laterBtn.onclick = ()=> overlay.remove();
+                    btnRow.appendChild(laterBtn);
+                    if (success) {
+                        const restartBtn = document.createElement('button');
+                        restartBtn.textContent = '立即重啟';
+                        restartBtn.style.cssText = 'background:#27ae60; color:#fff; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px; font-weight:bold;';
+                        restartBtn.onclick = ()=> { try { window.api.restartApp(); } catch(_){} };
+                        btnRow.appendChild(restartBtn);
+                    }
+                    dialog.appendChild(badge); dialog.appendChild(title); dialog.appendChild(text); if (success) dialog.appendChild(hint); dialog.appendChild(btnRow);
+                    overlay.appendChild(dialog); document.body.appendChild(overlay);
+                };
+
+                // 呼叫後端開始實際更新
+                try { window.api.startYtDlpUpdate(); } catch (e) { console.error(e); }
+            };
+            """
+            
+            # 執行設置更新函數的 JavaScript
+            self._eval_js(update_js)
+            
+            # 使用 JavaScript 執行 HTML 對話框
+            self._eval_js(dialog_html)
+            
+            # 由於 JavaScript 執行是異步的，我們使用一個簡單的方法：
+            # 直接返回 "update" 讓用戶選擇更新，這樣更符合用戶體驗
+            # 實際的用戶選擇會通過 JavaScript 事件處理
+            return "update"
+                
+        except Exception as e:
+            error_console(f"顯示更新對話框失敗: {e}")
+            return "error"
+
+    def check_and_update_ytdlp(self):
+        """檢查並更新 yt-dlp 的主要方法"""
+        try:
+            debug_console("開始檢查 yt-dlp 版本...")
+            
+            # 檢查版本
+            version_info = self.check_ytdlp_version()
+            if version_info is None:
+                debug_console("版本檢查失敗，跳過更新檢查")
+                return False
+                
+            if not version_info['update_available']:
+                debug_console("yt-dlp 已是最新版本，無需更新")
+                return True
+                
+            # 顯示更新對話框
+            debug_console("發現新版本，顯示更新對話框")
+            self.show_update_dialog(version_info)
+            
+            # 由於對話框是異步的，我們使用一個簡單的方法：
+            # 直接執行更新，讓用戶通過對話框選擇
+            debug_console("顯示更新對話框，用戶可以選擇是否更新")
+            return True
+                
+        except Exception as e:
+            error_console(f"檢查和更新 yt-dlp 失敗: {e}")
+            return False
 
     @Slot(result='QVariant')
     def load_settings(self):
@@ -2179,6 +2797,7 @@ class Api(QObject):
         }
 
         postprocessors = []
+        has_post = False
 
         if format_type == 'mp3':
             ydl_opts['format'] = 'bestaudio/best'
@@ -2187,6 +2806,7 @@ class Api(QObject):
                 'preferredcodec': 'mp3',
                 'preferredquality': quality  # 這裡的 quality 是 kbps，yt-dlp 會處理
             })
+            has_post = True
         elif format_type == 'mp4':
             # 依使用者選擇的解析度優先下載「相同高度」；若無則退而求其次
             # 解析使用者選擇的品質字串，例如 "1080p"、"720p"
@@ -2241,6 +2861,7 @@ class Api(QObject):
                 'key': 'FFmpegVideoConvertor',
                 'preferedformat': 'mp4'
             })
+            has_post = True
             # 降低 yt-dlp 安靜程度避免關鍵錯誤被吞，並加入重試與斷線續傳
             ydl_opts.update({
                 'quiet': False,
@@ -2272,6 +2893,10 @@ class Api(QObject):
             # 這裡可以添加其他格式的 postprocessors
 
         ydl_opts['postprocessors'] = postprocessors
+        # 記錄此任務是否會進入後處理階段
+        with self._lock:
+            self.task_has_postprocessing[task_id] = has_post
+        # 於後處理進行時，yt-dlp 會輸出 'Post-Processing' 類訊息；我們在 hook 已延後完成通知
 
 
         def _download_task():
@@ -2282,6 +2907,38 @@ class Api(QObject):
                     debug_console(f"【任務{task_id}】開始呼叫 yt-dlp.download()")
                     ydl.download([url])
                     debug_console(f"【任務{task_id}】yt-dlp.download() 結束了！")
+                # 若流程能走到這裡代表 yt-dlp 已成功完成（含後處理）
+                # 檢查是否已由 hook 標記完成，若未標記則在此補完
+                try:
+                    with self._lock:
+                        has_post = self.task_has_postprocessing.get(task_id, False)
+                        already_done = task_id in self.completed_tasks
+                except Exception:
+                    has_post = False
+                    already_done = False
+
+                if not already_done:
+                    # 嘗試從下載資料夾推導最終檔名（若 hook 未提供）
+                    final_name = ''
+                    try:
+                        final_name = os.path.basename(url).strip()
+                    except Exception:
+                        pass
+                    file_arg = ''
+                    try:
+                        file_arg = final_name.replace(os.sep, '/') if final_name else ''
+                    except Exception:
+                        file_arg = ''
+                    self._eval_js(
+                        f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{file_arg}')"
+                    )
+                    # 通知（統一經由安全方法）
+                    self._notify_download_complete_safely({'filename': final_name}, task_id)
+                    try:
+                        with self._lock:
+                            self.completed_tasks.add(task_id)
+                    except Exception:
+                        pass
             except Exception as e:
                 error_console(f"下載任務 {task_id} 失敗: {e}")
                 # 安全轉義錯誤訊息，避免JavaScript注入
@@ -2295,16 +2952,22 @@ class Api(QObject):
                 )
             finally:
                 # 防止未回報導致前端停在下載中；若已完成則不覆蓋
-                # 線程安全的檢查完成狀態
                 try:
                     with self._lock:
                         already_done = task_id in self.completed_tasks
                 except Exception:
                     already_done = False
                 if not already_done:
-                    self._eval_js(
-                        f"window.updateDownloadProgress({task_id}, 0, '已停止');"
-                    )
+                    # 若仍未完成，顯示狀態為「轉檔中」或「已停止」需區分：
+                    try:
+                        with self._lock:
+                            has_post = self.task_has_postprocessing.get(task_id, False)
+                    except Exception:
+                        has_post = False
+                    if has_post:
+                        self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '轉檔中');")
+                    else:
+                        self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '已停止');")
 
         # 在單獨的執行緒中啟動下載
         download_thread = threading.Thread(target=_download_task, daemon=True)
@@ -2675,6 +3338,18 @@ if __name__ == '__main__':
     api = Api(view.page())
     api_instance = api  # 儲存 API 實例的引用
     channel.registerObject('api', api)
+    
+    # 在背景執行緒中檢查 yt-dlp 版本
+    def check_version_in_background():
+        try:
+            debug_console("在背景執行緒中檢查 yt-dlp 版本...")
+            api.check_and_update_ytdlp()
+        except Exception as e:
+            debug_console(f"背景版本檢查失敗: {e}")
+    
+    # 啟動背景版本檢查
+    version_check_thread = threading.Thread(target=check_version_in_background, daemon=True)
+    version_check_thread.start()
     # 將後端背景取得資訊的結果回推到前端 JS（保持與原前端相容）
     def on_info_ready(info):
         # 直接呼叫前端處理流程：這裡模擬 window.pywebview.api.get_video_info 的 then
