@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="zh-tw">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>oldfish影片下載器</title>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        // 初始化 Qt WebChannel 並建立與後端的橋接，提供 window.pywebview.api 相容層
+        (function(){
+            function initChannel(){
+                if (typeof QWebChannel === 'undefined' || !window.qt || !qt.webChannelTransport){
+                    // 若尚未就緒，稍後重試
+                    return setTimeout(initChannel, 50);
+                }
+                new QWebChannel(qt.webChannelTransport, function(channel){
+                    window.api = channel.objects.api;
+                    window.pywebview = { api: window.api };
+                });
+            }
+            initChannel();
+        })();
+    </script>
+    <style>
+        :root {
+            --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+            --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: all 0.25s var(--ease-default);
+        }
+        
+        /* 基本動畫關鍵幀 */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #181a20;
+            color: #e5e7eb;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+        /* 全域卷軸樣式（Chromium/QtWebEngine） */
+        html, body, .main, .queue-list {
+            scrollbar-width: thin; /* Firefox 後備 */
+            scrollbar-color: #4a4f59 #121418; /* 拇指/軌道：現代灰 */
+        }
+        ::-webkit-scrollbar {
+            width: 8px;  /* 更纖細 */
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #121418; /* 深色軌道 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3a3f4a; /* 中性深灰 */
+            border-radius: 6px;
+            border: 2px solid #121418; /* 與軌道留縫，視覺更輕 */
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4a4f59; /* 略亮的灰色，避免過亮 */
+            border-color: #121418;
+        }
+        ::-webkit-scrollbar-corner {
+            background: #121418;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 160px;
+            background: #23262f;
+            box-shadow: 2px 0 8px #111;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            padding-top: 20px;
+            transition: width 0.3s var(--ease-smooth);
+            overflow: hidden;
+        }
+        .sidebar.collapsed {
+            width: 60px;
+        }
+        .sidebar .menu-btn {
+            margin-bottom: 30px;
+            cursor: pointer;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 6px;
+            transition: transform 0.3s ease;
+        }
+        .sidebar.collapsed .menu-btn img {
+            transform: rotate(180deg);
+        }
+        .sidebar .nav-item {
+            width: 100%;
+            height: 48px;
+            margin-bottom: 6px; /* 標籤間距縮短 */
+            display: flex;
+            align-items: center;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s var(--ease-smooth);
+            padding-left: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .sidebar .nav-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s;
+        }
+        
+        .sidebar .nav-item:hover::before {
+            left: 100%;
+        }
+        
+        .sidebar .nav-item:hover {
+            transform: translateX(4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .sidebar .nav-item.selected {
+            background: #2ecc71;
+            box-shadow: 0 0 6px #27ae60;
+        }
+        .sidebar .nav-item img {
+            width: 28px;
+            height: 28px;
+            filter: brightness(0.85);
+        }
+        .sidebar .nav-text {
+            margin-left: 16px;
+            font-size: 17px;
+            font-weight: 500;
+            transition: opacity 0.2s ease-in-out 0.05s;
+            opacity: 1;
+            color: #e5e7eb;
+            white-space: nowrap;
+        }
+        .sidebar.collapsed .nav-text {
+            opacity: 0;
+            transition: opacity 0.1s ease-in-out
+        }
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            position: relative;
+            overflow-y: auto; /* 讓主內容可滾動，配合 sticky 底部區 */
+        }
+        .title-img {
+            margin-top: 60px;
+            margin-bottom: 30px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            width: 540px;
+            filter: drop-shadow(0 0 8px #222);
+        }
+        .search-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+        .search-input {
+            width: 340px;
+            height: 38px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #23262f;
+            color: #e5e7eb;
+            padding: 0 14px;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s var(--ease-smooth);
+            position: relative;
+        }
+        
+        .search-input::placeholder {
+            transition: opacity 0.3s ease;
+        }
+        
+        .search-input:focus::placeholder {
+            opacity: 0.7;
+        }
+        .search-input:focus {
+            border-color: #2ecc71;
+            box-shadow: 0 0 0 3px rgba(39, 174, 96, 0.3);
+        }
+        .download-btn {
+            margin-left: 12px;
+            background: #27ae60;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 0 24px;
+            height: 38px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s var(--ease-spring);
+            box-shadow: 0 2px 8px #111;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .download-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .download-btn:active::before {
+            width: 300px;
+            height: 300px;
+        }
+        .download-btn:hover {
+            background: #219150;
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+        }
+        
+        .download-btn:active {
+            transform: scale(0.98) translateY(0);
+            animation: none;
+        }
+        
+        .settings-btn {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            width: 56px;
+            height: 56px;
+            background: #2ecc71;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(46, 204, 113, 0.3);
+            transition: all 0.3s var(--ease-smooth);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .settings-btn:hover {
+            background: #27ae60;
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4);
+        }
+        .settings-btn img {
+            width: 28px;
+            height: 28px;
+            filter: brightness(0) invert(1);
+        }
+        
+
+        .hidden {
+            display: none;
+        }
+        .queue-page {
+            /* margin-top: 100px; */ /* 移除此行，由 queue-list 內部控制間距 */
+            text-align: center;
+            font-size: 22px;
+            color: #888;
+            flex: 1; /* 讓佇列頁面佔據剩餘空間 */
+            width: 100%; /* 讓佇列頁面寬度為100% */
+            display: flex; /* 讓其內容可以居中 */
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between; /* 上下分佈，讓底部輸入區靠底 */
+        }
+        .modal-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.35);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        .modal-bg.show {
+            display: flex;
+            opacity: 1;
+            transform: scale(1);
+            animation: scaleIn 0.3s var(--ease-spring);
+        }
+        .modal {
+            background: #23262f;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px #000a;
+            padding: 28px 32px 24px 32px;
+            min-width: 320px;
+            max-width: 90vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        
+        .modal-icon {
+            position: absolute;
+            left: 24px;
+            top: 24px;
+            width: 32px;
+            height: 32px;
+        }
+        .modal-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2ecc71;
+            margin-bottom: 18px;
+            margin-top: 0;
+            width: 100%;
+            text-align: center;
+        }
+        .modal-msg {
+            font-size: 16px;
+            color: #e5e7eb;
+            margin-bottom: 18px;
+            text-align: center;
+            width: 100%;
+            white-space: pre-line;
+        }
+        .modal-btn {
+            background: #27ae60;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 0 24px;
+            height: 38px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 8px;
+            align-self: center;
+        }
+        .modal-btn:hover {
+            background: #219150;
+        }
+        .video-modal-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.35);
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        .video-modal-bg.show {
+            display: flex;
+            opacity: 1;
+            transform: scale(1);
+        }
+        .video-modal {
+            background: #23262f;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px #000a;
+            padding: 0;
+            min-width: 420px;
+            max-width: 96vw;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            position: relative;
+        }
+        .video-modal-loading {
+            padding: 48px 48px 32px 48px;
+            font-size: 20px;
+            color: #aaa;
+            text-align: center;
+        }
+        .video-modal-header {
+            display: flex;
+            align-items: flex-start;
+            padding: 32px 32px 0 32px;
+        }
+        .video-modal-thumb {
+            max-height: 70px; /* Adjust thumbnail height to match text content */
+            width: auto; /* Maintain aspect ratio */
+            border-radius: 8px;
+            object-fit: cover; /* Ensure the whole image is visible without cropping */
+            margin-right: 18px;
+            background: #181a20;
+            align-self: flex-start; /* Align to the top within the flex container */
+        }
+        .video-modal-titlebox {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+        .video-modal-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #e5e7eb;
+            margin-bottom: 6px;
+            margin-top: 0;
+            word-break: break-all;
+        }
+        .video-modal-meta {
+            font-size: 15px;
+            color: #aaa;
+            margin-bottom: 2px;
+        }
+        .video-modal-uploader {
+            font-size: 15px;
+            color: #aaa;
+            margin-bottom: 2px;
+        }
+        .video-modal-options {
+            padding: 24px 32px 0 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        .video-modal-label {
+            font-size: 16px;
+            color: #e5e7eb;
+            margin-bottom: 6px;
+        }
+        .custom-select {
+            position: relative;
+            width: 100%;
+            max-width: 300px;
+            user-select: none;
+        }
+        .custom-select-header {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #23262f;
+            color: #e5e7eb;
+            font-size: 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .custom-select-header:hover {
+            border-color: #2ecc71;
+            background: #2b2e37;
+        }
+        .custom-select-header.active {
+            border-color: #2ecc71;
+            background: #2b2e37;
+            box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+        }
+        .custom-select-arrow {
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #e5e7eb;
+            transition: transform 0.2s ease;
+        }
+        .custom-select-header.active .custom-select-arrow {
+            transform: rotate(180deg);
+        }
+        .custom-select-options {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #23262f;
+            border: 1px solid #444;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .custom-select-options.show {
+            display: block;
+        }
+        .custom-select-option {
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid #333;
+        }
+        .custom-select-option:last-child {
+            border-bottom: none;
+        }
+        .custom-select-option:hover {
+            background: #2ecc71;
+            color: #fff;
+        }
+        .custom-select-option.selected {
+            background: #2ecc71;
+            color: #fff;
+        }
+
+
+
+        /* 淺色主題樣式 */
+        body.light-theme {
+            background: #f5f5f5;
+            color: #333;
+        }
+        /* 淺色主題的卷軸顏色 */
+        body.light-theme, body.light-theme .main, body.light-theme .queue-list {
+            scrollbar-color: #b5b8bd #ededed; /* 淺色主題灰 */
+        }
+        body.light-theme ::-webkit-scrollbar-track {
+            background: #ededed;
+        }
+        body.light-theme ::-webkit-scrollbar-thumb {
+            background: #c7cad0; /* 中灰 */
+            border-color: #ededed;
+            border-radius: 6px;
+        }
+        body.light-theme ::-webkit-scrollbar-thumb:hover {
+            background: #b5b8bd; /* 稍深灰 */
+        }
+        body.light-theme .container {
+            background: #f5f5f5;
+        }
+        body.light-theme .sidebar {
+            background: #ffffff;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+        }
+        body.light-theme .nav-item {
+            color: #333;
+        }
+        body.light-theme .nav-item.selected {
+            background: #2ecc71;
+            color: #fff;
+        }
+        body.light-theme .nav-text {
+            color: #333;
+        }
+        body.light-theme .nav-item.selected .nav-text {
+            color: #fff;
+        }
+        body.light-theme .main {
+            background: #f5f5f5;
+        }
+
+        body.light-theme .search-input {
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }
+        body.light-theme .search-input:focus {
+            border-color: #2ecc71;
+        }
+        body.light-theme .queue-item {
+            background: #ffffff;
+            color: #333;
+        }
+        body.light-theme .custom-select-header {
+            background: #ffffff;
+            border-color: #ddd;
+            color: #333;
+        }
+        body.light-theme .custom-select-options {
+            background: #ffffff;
+            border-color: #ddd;
+        }
+        body.light-theme .custom-select-option {
+            color: #333;
+            border-bottom-color: #eee;
+        }
+        body.light-theme .modal {
+            background: #ffffff;
+            color: #333;
+        }
+        body.light-theme .video-modal {
+            background: #ffffff;
+            color: #333;
+        }
+        body.light-theme .video-modal-title {
+            color: #333;
+        }
+        body.light-theme .video-modal-label {
+            color: #333;
+        }
+        .video-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 16px;
+            padding: 24px 32px 32px 32px;
+        }
+        .video-modal-btn {
+            background: #27ae60;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            height: 40px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+            white-space: nowrap;
+            min-width: 100px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .video-modal-btn.cancel {
+            background: #444;
+            color: #eee;
+        }
+        .video-modal-btn:hover {
+            background: #219150;
+        }
+        .video-modal-btn.cancel:hover {
+            background: #666;
+        }
+
+        /* 新增佇列頁面樣式 */
+        .queue-search-row {
+            width: 90%;
+            max-width: 600px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .queue-list {
+            width: 90%; /* 調整列表寬度 */
+            max-width: 800px; /* 最大寬度限制 */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* 讓列表項居中 */
+            padding-bottom: 110px; /* 下修預留高度，讓列表可視範圍更大 */
+        }
+
+        .queue-bottom {
+            position: sticky; /* 置於主內容底部，不覆蓋左側標籤列 */
+            bottom: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 0 12px; /* 縮小上下高度 */
+            background: #181a20; /* 與頁面一致，避免透出 */
+            z-index: 1200; /* 高於一般內容，低於模態視窗(>10000) */
+            box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
+        }
+
+        .queue-item {
+            background: #2b2e37; /* 項目背景色 */
+            border-radius: 12px;
+            padding: 15px 20px;
+            /* margin-bottom: 20px; */ /* 項目間距由分隔線控制 */
+            width: 100%;
+            display: flex;
+            align-items: flex-start; /* 縮圖和文字頂部對齊 */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            position: relative;
+            overflow: hidden; /* 防止內容溢出 */
+            transition: all 0.2s ease;
+        }
+        
+        .queue-item:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+        }
+
+        .queue-item-thumbnail {
+            width: 120px; /* 縮圖寬度 */
+            height: 90px; /* 縮圖高度 */
+            object-fit: cover; /* 裁剪圖片以填充 */
+            border-radius: 8px;
+            margin-right: 15px;
+            flex-shrink: 0; /* 防止縮圖被壓縮 */
+            background-color: #181a20; /* 縮圖載入前的背景 */
+            display: flex; /* 讓內容居中 */
+            align-items: center;
+            justify-content: center;
+            color: #b0b0b0; /* 文字顏色 */
+            font-size: 12px; /* 文字大小 */
+            text-align: center;
+            line-height: 1.2;
+            padding: 5px; /* 內邊距 */
+        }
+
+        .queue-item-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .queue-item-info {
+            flex-grow: 1; /* 資訊部分佔據剩餘空間 */
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start; /* 頂部對齊 */
+        }
+
+        .queue-item-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #e5e7eb;
+            margin-bottom: 5px;
+            word-break: break-all; /* 長標題自動換行 */
+            text-align: left;
+        }
+
+        .queue-item-meta,
+        .queue-item-url {
+            font-size: 14px;
+            color: #b0b0b0;
+            margin-bottom: 3px;
+            word-break: break-all;
+            text-align: left;
+        }
+
+        .queue-item-url a {
+            color: #2ecc71;
+            text-decoration: none;
+        }
+        .queue-item-url a:hover {
+            text-decoration: underline;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            background-color: #444;
+            border-radius: 5px;
+            height: 8px;
+            margin-top: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%; /* 初始為0 */
+            background: #2ecc71;
+            border-radius: 5px;
+            transition: width 0.3s var(--ease-smooth);
+        }
+        
+        
+
+        .progress-text {
+            font-size: 13px;
+            color: #888;
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        .queue-separator {
+            width: 90%;
+            max-width: 780px; /* 比項目略窄 */
+            height: 1px;
+            background-color: #3a3f4a;
+            margin: 0 auto 8px; /* 縮小與輸入區距離 */
+        }
+        .queue-item-actions {
+            display: flex;
+            align-items: center;
+            margin-left: auto; /* 將按鈕推到最右邊 */
+        }
+        .queue-item-action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 8px;
+            transition: background 0.2s ease;
+        }
+        .queue-item-action-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .queue-item-action-btn img {
+            width: 24px;
+            height: 24px;
+            filter: brightness(0.85);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar" id="sidebar">
+            <div class="menu-btn" onclick="toggleSidebar()">
+                <img src="assets/menu.png" alt="menu" style="width:32px;height:32px;">
+            </div>
+            <div class="nav-item selected" id="nav-home" onclick="showPage('home')">
+                <img src="assets/home.png" alt="主頁">
+                <span class="nav-text">主頁</span>
+            </div>
+            <div class="nav-item" id="nav-queue" onclick="showPage('queue')">
+                <img src="assets/quene.png" alt="佇列">
+                <span class="nav-text">佇列</span>
+            </div>
+
+        </div>
+        <div class="main">
+            <img class="title-img" id="title-img" src="assets/icon_text.png" alt="">
+            <div class="search-row" id="search-row">
+                <input class="search-input" id="video-url" type="text" placeholder="請輸入影片網址...">
+                <button class="download-btn" onclick="downloadVideo()">下載</button>
+            </div>
+            
+            <!-- 設定按鈕 - 右下角 -->
+            <button class="settings-btn" id="settings-btn" onclick="openSettings()">
+                <img src="assets/settings.png" alt="設定">
+            </button>
+
+            <!-- 佇列頁面改造 -->
+            <div class="queue-page" id="queue-page"> <!-- 移除 hidden class，改由 JS 完全控制 -->
+                <div class="queue-list" id="queue-list">
+                    <!-- 影片任務將會動態新增到這裡 -->
+                </div>
+                <div class="queue-bottom">
+                    <div class="queue-separator"></div>
+                    <!-- 佇列頁面的輸入框（置底置中） -->
+                    <div class="queue-search-row" id="queue-search-row">
+                        <input class="search-input" id="queue-video-url" type="text" placeholder="請輸入影片網址...">
+                        <button class="download-btn" onclick="downloadVideoFromQueue()">下載</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <!-- 全局載入中遮罩 -->
+    <div class="loading-bg" id="loading-bg" style="position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.45); z-index: 15000; display: none;">
+        <div style="position:absolute; top:50%; left:50%; transform: translate(-50%,-50%); background:#23262f; color:#e5e7eb; padding:16px 22px; border-radius:12px; box-shadow:0 4px 24px #000a; font-size:16px;">
+            載入中...
+        </div>
+    </div>
+    <div class="modal-bg" id="modal-bg">
+        <div class="modal">
+            <img class="modal-icon" src="assets/icon.png" alt="icon">
+            <div class="modal-title" id="modal-title"></div>
+            <div class="modal-msg" id="modal-msg"></div>
+            <button class="modal-btn" onclick="closeModal()">確定</button>
+        </div>
+    </div>
+    <div class="video-modal-bg" id="video-modal-bg">
+        <div class="video-modal" id="video-modal">
+            <div class="video-modal-loading" id="video-modal-loading">載入中...</div>
+            <div id="video-modal-content" style="display:none;">
+                <div class="video-modal-header">
+                    <img class="video-modal-thumb" id="video-modal-thumb" src="assets/icon.png" alt="thumb">
+                    <div class="video-modal-titlebox">
+                        <div class="video-modal-title" id="video-modal-title"></div>
+                        <div class="video-modal-meta" id="video-modal-duration"></div>
+                        <div class="video-modal-uploader" id="video-modal-uploader"></div>
+                    </div>
+                </div>
+                <div class="video-modal-options">
+                    <div class="video-modal-label" id="video-modal-quality-label">影片畫質</div>
+                    <div class="custom-select" id="quality-select">
+                        <div class="custom-select-header" onclick="toggleSelect('quality-select')">
+                            <span class="custom-select-text">請選擇畫質</span>
+                            <div class="custom-select-arrow"></div>
+                        </div>
+                        <div class="custom-select-options" id="quality-options"></div>
+                    </div>
+                    <div class="video-modal-label" style="margin-top:18px;">影片格式</div>
+                    <div class="custom-select" id="format-select">
+                        <div class="custom-select-header" onclick="toggleSelect('format-select')">
+                            <span class="custom-select-text">請選擇格式</span>
+                            <div class="custom-select-arrow"></div>
+                        </div>
+                        <div class="custom-select-options" id="format-options"></div>
+                    </div>
+                </div>
+                <div class="video-modal-actions">
+                    <button class="video-modal-btn cancel" onclick="closeVideoModal()">取消</button>
+                    <button class="video-modal-btn" onclick="confirmDownload()">下載</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // 儲存上次獲取的影片資訊以還原畫質選項
+        let lastVideoInfo = null;
+        // 儲存目前正在處理的影片網址（從主頁或佇列進入）
+        let currentUrl = '';
+
+        // MP3, AAC, FLAC, WAV 的音訊品質選項
+        const AUDIO_QUALITIES = [
+            {label: "320kbps", value: "320"},
+            {label: "256kbps", value: "256"},
+            {label: "192kbps", value: "192"},
+            {label: "128kbps", value: "128"}
+        ];
+
+        // 儲存所有下載任務的陣列
+        let downloadQueue = [];
+        let nextTaskId = 0; // 用於給每個任務一個獨特的ID
+
+        /**
+         * 將影片畫質從高到低排序。
+         * 處理 "4K", "1080p", "720p", "360p", "2K", "4K" 等格式。
+         * @param {Array<Object>} qualities - 畫質物件陣列 {label: string, ratio: string}。
+         * @returns {Array<Object>} 已排序的畫質。
+         */
+        function sortQualities(qualities) {
+            return (qualities || []).slice().sort(function(a, b) {
+                function getNum(s) {
+                    if (typeof s.label === "string") {
+                        if (s.label.endsWith("K")) {
+                            let num = parseInt(s.label);
+                            return !isNaN(num) ? num * 1000 : 0;
+                        }
+                        if (s.label.endsWith("p")) {
+                            let num = parseInt(s.label);
+                            return !isNaN(num) ? num : 0;
+                        }
+                    }
+                    let num = parseInt(s.label); // 用於 "320kbps" 等情況
+                    return !isNaN(num) ? num : 0;
+                }
+                return getNum(b) - getNum(a); // 降序排序
+            });
+        }
+
+        /**
+         * 排序格式，優先考慮 "mp4" 和 "mp3"。
+         * @param {Array<Object>} formats - 格式物件陣列 {value: string, label: string, desc: string}。
+         * @returns {Array<Object>} 已排序的格式。
+         */
+        function sortFormats(formats) {
+            const priority = {"影片+音訊": 3, "影片": 2, "音訊": 1}; // 優先級定義
+            return (formats || []).slice().sort(function(a, b) {
+                let pa = priority[a.desc] || 0;
+                let pb = priority[b.desc] || 0;
+                if (pa !== pb) return pb - pa; // 按描述優先級降序
+                return a.value.localeCompare(b.value); // 描述相同時按值字母順序
+            });
+        }
+
+        /**
+         * 確認網址是否為有效的 YouTube 網址。
+         * @param {string} url - 要檢查的網址。
+         * @returns {boolean} 是否為有效的 YouTube 網址。
+         */
+        function isYoutubeUrl(url) {
+            return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//.test(url.trim());
+        }
+
+        /**
+         * 切換側邊欄的折疊狀態。
+         */
+        function toggleSidebar() {
+            var sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+        }
+        
+
+        /**
+         * 顯示指定頁面並更新導航項目選擇。
+         * @param {string} pageName - 要顯示的頁面名稱 ('home' 或 'queue')。
+         */
+        function showPage(pageName) {
+            document.getElementById('nav-home').classList.remove('selected');
+            document.getElementById('nav-queue').classList.remove('selected');
+
+            // Get all main content elements
+            const titleImg = document.getElementById('title-img');
+            const searchRow = document.getElementById('search-row');
+            const queuePage = document.getElementById('queue-page');
+            const queueSearchRow = document.getElementById('queue-search-row');
+            const queueList = document.getElementById('queue-list');
+            const settingsBtn = document.getElementById('settings-btn');
+
+            if (pageName === 'home') {
+                document.getElementById('nav-home').classList.add('selected');
+                
+                // 隱藏佇列頁面
+                if (queuePage) queuePage.style.display = 'none';
+                if (queueSearchRow) queueSearchRow.style.display = 'none';
+                
+                // 顯示主頁元素
+                if (titleImg) titleImg.style.display = 'block';
+                if (searchRow) searchRow.style.display = 'flex';
+                if (settingsBtn) settingsBtn.style.display = 'block';
+                
+                if (queueList) queueList.innerHTML = '';
+                
+            } else if (pageName === 'queue') {
+                document.getElementById('nav-queue').classList.add('selected');
+                
+                // 隱藏主頁元素
+                if (titleImg) titleImg.style.display = 'none';
+                if (searchRow) searchRow.style.display = 'none';
+                if (settingsBtn) settingsBtn.style.display = 'none';
+                
+                // 顯示佇列頁面
+                if (queuePage) queuePage.style.display = 'flex';
+                if (queueSearchRow) queueSearchRow.style.display = 'flex';
+                
+                renderQueue();
+            }
+        }
+
+        /**
+         * 顯示一般訊息模態視窗。
+         * @param {string} title - 訊息標題。
+         * @param {string} message - 訊息內容。
+         */
+        function showModal(title, msg) {
+            const modal = document.getElementById('modal-bg');
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-msg').innerHTML = msg;
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('show'), 10); // 觸發動畫
+        }
+
+        /**
+         * 隱藏一般訊息模態視窗。
+         */
+        function closeModal() {
+            const modal = document.getElementById('modal-bg');
+            modal.classList.remove('show');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 200); // 等待動畫結束
+        }
+
+        /**
+         * 隱藏影片詳細資訊模態視窗。
+         */
+        function closeVideoModal() {
+            const videoModalBg = document.getElementById('video-modal-bg');
+            videoModalBg.classList.remove('show');
+            setTimeout(() => {
+                videoModalBg.style.display = 'none';
+                hideLoading();
+            }, 200);
+        }
+
+        /**
+         * 處理佇列輸入框的Enter鍵按下。
+         */
+        function handleQueueInputKeyPress(event) {
+            if (event.key === 'Enter') {
+                downloadVideoFromQueue();
+            }
+        }
+        
+        /**
+         * 從佇列頁面下載影片。
+         */
+        function downloadVideoFromQueue() {
+            const urlInput = document.getElementById('queue-video-url');
+            const url = urlInput.value.trim();
+            
+            if (!url) {
+                showModal('錯誤', '請輸入影片網址');
+                return;
+            }
+            
+            // 與主頁一致：開啟影片資訊模態，讓使用者選擇格式再下載
+            try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
+            showVideoModal(url);
+            
+            // 清空輸入框
+            urlInput.value = '';
+        }
+
+        /**
+         * 處理主頁面上的下載按鈕點擊。
+         * 獲取影片資訊並顯示影片詳細資訊模態視窗。
+         */
+        async function downloadVideo() {
+            var url = document.getElementById('video-url').value;
+            if (!url.trim()) {
+                showModal("提醒", "請輸入影片網址！");
+                return;
+            }
+            if (!isYoutubeUrl(url)) {
+                showModal("網址格式錯誤", "</div><div style='text-align:left;'><br>正確格式範例：<br>https://www.youtube.com/watch?v=xxxx<br>https://youtu.be/xxxx</div>");
+                return;
+            }
+            // 立即顯示載入中，避免前一層阻塞繪製
+            requestAnimationFrame(() => showLoading());
+            // 設置 currentUrl，避免之後確認下載時讀到空字串
+            try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
+            showVideoModal(url);
+        }
+
+        /**
+         * 開啟設定視窗
+         */
+        function openSettings() {
+            window.pywebview.api.open_settings()
+                .then(result => {
+                    console.log('設定視窗已開啟:', result);
+                })
+                .catch(error => {
+                    console.error('開啟設定視窗失敗:', error);
+                    showModal('錯誤', '無法開啟設定視窗');
+                });
+        }
+
+        function showLoading() {
+            var lb = document.getElementById('loading-bg');
+            if (lb) { lb.style.display = 'flex'; }
+        }
+        function hideLoading() {
+            var lb = document.getElementById('loading-bg');
+            if (lb) { lb.style.display = 'none'; }
+        }
+
+        /**
+         * 顯示影片詳細資訊模態視窗。
+         * @param {string} url - 影片網址。
+         */
+        function showVideoModal(url) {
+            // 記錄目前處理的網址供確認下載使用
+            try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
+            const videoModalBg = document.getElementById('video-modal-bg');
+            videoModalBg.style.display = 'flex';
+            setTimeout(() => videoModalBg.classList.add('show'), 10);
+            document.getElementById('video-modal-loading').style.display = '';
+            document.getElementById('video-modal-content').style.display = 'none';
+            // 使用 requestAnimationFrame 確保樣式更新後再顯示，避免同步阻塞不重繪
+            requestAnimationFrame(() => showLoading());
+            // 背景取得影片資訊，前端以回呼接收，避免阻塞
+            setTimeout(function(){
+                window.__onVideoInfo = function(info) {
+                    try { lastVideoInfo = info; } catch(e) {}
+
+                    // 畫質選項（由高到低排序）
+                    var qualityOptions = document.getElementById('quality-options');
+                    qualityOptions.innerHTML = '';
+                    var qualities = (info.qualities || []).slice();
+                    qualities.sort(function(a, b) {
+                        // 解析 label 內的數字（如 4K, 1080p, 720p, 480p, 360p）
+                        function getValue(q) {
+                            if (q.label.endsWith('K')) return parseInt(q.label) * 1000;
+                            var m = q.label.match(/(\d+)p/);
+                            return m ? parseInt(m[1]) : 0;
+                        }
+                        return getValue(b) - getValue(a);
+                    });
+                    qualities.forEach(function(q) {
+                        var optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
+                        optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
+                        if (q.label === '1080p') {
+                            optionDiv.classList.add('selected');
+                            const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                            if (qualitySelectText) {
+                                qualitySelectText.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                            }
+                            currentQuality = q.label;
+                        }
+                        qualityOptions.appendChild(optionDiv);
+                    });
+
+                    // 格式選項（mp4和mp3優先）
+                    var formatOptions = document.getElementById('format-options');
+                    formatOptions.innerHTML = '';
+                    var formats = (info.formats || []).slice();
+                    formats.sort(function(a, b) {
+                        var priority = {"影片+音訊": 3, "影片": 2, "音訊": 1};
+                        var pa = priority[a.desc] || 0;
+                        var pb = priority[b.desc] || 0;
+                        if (pa !== pb) return pb - pa;
+                        return a.value.localeCompare(b.value);
+                    });
+                    formats.forEach(function(f) {
+                        var optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = f.label + (f.desc ? ' (' + f.desc + ')' : '');
+                        optionDiv.onclick = () => selectOption('format-select', f.value, f.label + (f.desc ? ' (' + f.desc + ')' : ''));
+                        if (f.value === 'mp4') {
+                            optionDiv.classList.add('selected');
+                            const formatSelectText = document.querySelector('#format-select .custom-select-text');
+                            if (formatSelectText) {
+                                formatSelectText.textContent = f.label + (f.desc ? ' (' + f.desc + ')' : '');
+                            }
+                            currentFormat = f.value;
+                        }
+                        formatOptions.appendChild(optionDiv);
+                    });
+
+                    // 設定預設值
+                    if (!currentQuality && qualities.length > 0) {
+                        currentQuality = qualities[0].label;
+                        const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                        if (qualitySelectText) {
+                            qualitySelectText.textContent = qualities[0].label + (qualities[0].ratio ? ' ' + qualities[0].ratio : '');
+                        }
+                    }
+                    if (!currentFormat && formats.length > 0) {
+                        currentFormat = formats[0].value;
+                        const formatSelectText = document.querySelector('#format-select .custom-select-text');
+                        if (formatSelectText) {
+                            formatSelectText.textContent = formats[0].label + (formats[0].desc ? ' (' + formats[0].desc + ')' : '');
+                        }
+                    }
+
+                    // 縮圖處理：如果 info.thumb 不存在或載入失敗，顯示文字
+                    const thumbElement = document.getElementById('video-modal-thumb');
+                    if (info.thumb) {
+                        thumbElement.src = info.thumb;
+                        thumbElement.style.display = '';
+                        thumbElement.alt = "影片縮圖";
+                        const existingNoThumbText = thumbElement.parentNode.querySelector('.video-modal-thumb-text');
+                        if (existingNoThumbText) { existingNoThumbText.remove(); }
+                    } else {
+                        thumbElement.src = '';
+                        thumbElement.style.display = 'none';
+                        let noThumbText = thumbElement.parentNode.querySelector('.video-modal-thumb-text');
+                        if (!noThumbText) {
+                            noThumbText = document.createElement('div');
+                            noThumbText.classList.add('video-modal-thumb-text');
+                            noThumbText.innerText = "找不到縮圖";
+                            noThumbText.style.width = '100%';
+                            noThumbText.style.height = '100%';
+                            noThumbText.style.display = 'flex';
+                            noThumbText.style.alignItems = 'center';
+                            noThumbText.style.justifyContent = 'center';
+                            noThumbText.style.backgroundColor = '#181a20';
+                            noThumbText.style.borderRadius = '8px';
+                            noThumbText.style.color = '#b0b0b0';
+                            noThumbText.style.fontSize = '12px';
+                            noThumbText.style.textAlign = 'center';
+                            noThumbText.style.lineHeight = '1.2';
+                            noThumbText.style.padding = '5px';
+                            thumbElement.parentNode.insertBefore(noThumbText, thumbElement.nextSibling);
+                        }
+                    }
+
+                    document.getElementById('video-modal-title').innerText = info.title || '';
+                    document.getElementById('video-modal-duration').innerText = info.duration || '';
+                    document.getElementById('video-modal-uploader').innerText = info.uploader ? info.uploader : '';
+                    document.getElementById('video-modal-uploader').style.display = info.uploader ? '' : 'none';
+                    document.getElementById('video-modal-loading').style.display = 'none';
+                    document.getElementById('video-modal-content').style.display = '';
+                    hideLoading();
+                };
+                window.__onVideoInfoError = function(error) {
+                    console.error('獲取影片資訊時出錯:', error);
+                    showModal('錯誤', '找不到影片，請確認網址是否輸入正確');
+                    closeVideoModal();
+                    hideLoading();
+                };
+                window.pywebview.api.start_get_video_info(url);
+            }, 0);
+        }
+
+        // 自定義下拉選單相關變數
+        let currentQuality = '';
+        let currentFormat = '';
+        let isQualitySelectOpen = false;
+        let isFormatSelectOpen = false;
+
+        /**
+         * 切換下拉選單的開關狀態
+         */
+        function toggleSelect(selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            
+            const options = select.querySelector('.custom-select-options');
+            const header = select.querySelector('.custom-select-header');
+            
+            if (!options || !header) return;
+            
+            // 關閉其他下拉選單
+            if (selectId === 'quality-select') {
+                closeSelect('format-select');
+                closeSelect('theme-select');
+                isQualitySelectOpen = !isQualitySelectOpen;
+                if (isQualitySelectOpen) {
+                    options.classList.add('show');
+                    header.classList.add('active');
+                } else {
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }
+            } else if (selectId === 'format-select') {
+                closeSelect('quality-select');
+                closeSelect('theme-select');
+                isFormatSelectOpen = !isFormatSelectOpen;
+                if (isFormatSelectOpen) {
+                    options.classList.add('show');
+                    header.classList.add('active');
+                } else {
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }
+            } else if (selectId === 'theme-select') {
+                closeSelect('quality-select');
+                closeSelect('format-select');
+                const isThemeSelectOpen = header.classList.contains('active');
+                if (!isThemeSelectOpen) {
+                    options.classList.add('show');
+                    header.classList.add('active');
+                } else {
+                    options.classList.remove('show');
+                    header.classList.remove('active');
+                }
+            }
+        }
+
+        /**
+         * 關閉指定的下拉選單
+         */
+        function closeSelect(selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            
+            const options = select.querySelector('.custom-select-options');
+            const header = select.querySelector('.custom-select-header');
+            
+            if (!options || !header) return;
+            
+            options.classList.remove('show');
+            header.classList.remove('active');
+            
+            if (selectId === 'quality-select') {
+                isQualitySelectOpen = false;
+            } else if (selectId === 'format-select') {
+                isFormatSelectOpen = false;
+            }
+        }
+
+        /**
+         * 選擇下拉選單選項
+         */
+        function selectOption(selectId, value, text) {
+            const select = document.getElementById(selectId);
+            const headerText = select.querySelector('.custom-select-text');
+            const options = select.querySelectorAll('.custom-select-option');
+            
+            // 移除所有選項的選中狀態
+            options.forEach(option => option.classList.remove('selected'));
+            
+            // 為當前選擇的選項添加選中狀態
+            const selectedOption = Array.from(options).find(option => 
+                option.textContent === text
+            );
+            if (selectedOption) {
+                selectedOption.classList.add('selected');
+            }
+            
+            headerText.textContent = text;
+            
+            if (selectId === 'quality-select') {{
+                currentQuality = value;
+                closeSelect('quality-select');
+            }} else if (selectId === 'format-select') {{
+                currentFormat = value;
+                closeSelect('format-select');
+                onFormatChange();
+            }}
+        }
+
+        /**
+         * 處理影片格式選擇的變更。
+         * 根據選擇的影片或音訊格式調整畫質選項。
+         */
+        function onFormatChange() {{
+            const qualityOptions = document.getElementById('quality-options');
+            const qualityLabel = document.getElementById('video-modal-quality-label');
+            const audioTypes = ["mp3", "aac", "flac", "wav"];
+
+            if (audioTypes.includes(currentFormat)) {{
+                // 如果是音訊格式，顯示音訊品質
+                qualityOptions.innerHTML = '';
+                AUDIO_QUALITIES.forEach(q => {{
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'custom-select-option';
+                    optionDiv.textContent = q.label;
+                    optionDiv.onclick = () => selectOption('quality-select', q.value, q.label);
+                    // 設定預設選中320kbps
+                    if (q.value === "320") {{
+                        optionDiv.classList.add('selected');
+                    }}
+                    qualityOptions.appendChild(optionDiv);
+                }});
+                currentQuality = "320"; // 預設音訊品質
+                const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                if (qualitySelectText) {{
+                    qualitySelectText.textContent = "320kbps";
+                }}
+                qualityLabel.innerText = "音質";
+            }} else {{
+                // 如果是影片格式，從 lastVideoInfo 還原影片畫質
+                if (lastVideoInfo && lastVideoInfo.qualities) {{
+                    qualityOptions.innerHTML = '';
+                    let sortedQualities = sortQualities(lastVideoInfo.qualities);
+                    let defaultSet = false;
+                    sortedQualities.forEach(q => {{
+                        const optionDiv = document.createElement('div');
+                        optionDiv.className = 'custom-select-option';
+                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                        optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
+                        // 設定預設選中1080p，如果沒有1080p則選第一個
+                        if (q.label === "1080p" || (!defaultSet && sortedQualities.indexOf(q) === 0)) {{
+                            optionDiv.classList.add('selected');
+                            currentQuality = q.label;
+                            const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
+                            if (qualitySelectText) {{
+                                qualitySelectText.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
+                            }}
+                            defaultSet = true;
+                        }}
+                        qualityOptions.appendChild(optionDiv);
+                    }});
+                }}
+                qualityLabel.innerText = "影片畫質";
+            }}
+        }}
+
+        /**
+         * 確認並開始影片下載。
+         * 使用選定的選項呼叫 Python API。
+         */
+        async function confirmDownload() {{
+            // 優先使用 showVideoModal 記錄的 currentUrl；若空才讀主頁輸入框
+            let url = (currentUrl || '').trim();
+            if (!url) {{
+            const urlInput = document.getElementById('video-url');
+                url = (urlInput && urlInput.value ? urlInput.value.trim() : '');
+            }}
+            const quality = currentQuality;
+            const format = currentFormat;
+
+            closeVideoModal(); // 關閉影片選擇模態視窗
+
+            // 將任務加入佇列並渲染
+            addDownloadTask({
+                id: nextTaskId++, // 給予唯一ID
+                url: url,
+                title: lastVideoInfo.title || '未知影片',
+                thumbnail: lastVideoInfo.thumb || '', // 縮圖找不到時傳空字串
+                uploader: lastVideoInfo.uploader || '未知作者',
+                duration: lastVideoInfo.duration || '00:00',
+                quality: quality,
+                format: format,
+                progress: 0, // 初始進度
+                status: '等待中', // 初始狀態
+                filePath: '' // 新增檔案路徑，下載完成後會更新
+            });
+
+            // 清理輸入狀態
+            try {{ const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; }} catch(e) {{}}
+            currentUrl = '';
+
+            // 呼叫 Python API 開始下載 (排到下一個事件迴圈，讓 UI 先切頁)
+            setTimeout(() => {{
+                try {{
+                    const task = downloadQueue[downloadQueue.length - 1];
+                    window.pywebview.api.start_download(task.id, url, quality, format)
+                        .then(result => {{ console.log("下載任務啟動結果:", result); }})
+                        .catch(error => {{ console.error("啟動下載任務時出錯:", error); }});
+                }} catch (e) {{
+                    console.error("排程下載任務時出錯:", e);
+                }}
+            }}, 0);
+        }}
+
+        /**
+         * 將一個下載任務添加到佇列並更新顯示。
+         * @param {{Object}} task - 下載任務物件。
+         */
+        function addDownloadTask(task) {{
+            downloadQueue.push(task);
+            renderQueue(); // 重新渲染整個佇列
+            // 如果在主頁添加任務，切換到佇列頁面
+            showPage('queue');
+        }}
+
+        /**
+         * 渲染或更新下載佇列的顯示。
+         */
+        function renderQueue() {{
+            const queueList = document.getElementById('queue-list');
+            queueList.innerHTML = ''; // 清空現有內容以重新渲染
+
+            if (downloadQueue.length === 0) {{
+                queueList.innerHTML = `<p style="text-align: center; color: #888; font-size: 18px; margin-top: 50px;">目前沒有下載任務。</p>`;
+                return;
+            }}
+
+            downloadQueue.forEach((task, index) => {{
+                // 創建任務項目
+                const itemDiv = document.createElement('div');
+                itemDiv.classList.add('queue-item');
+                itemDiv.setAttribute('data-task-id', task.id); // 便於後續更新特定任務
+
+                // 處理長網址顯示
+                const displayUrl = task.url.length > 50 ? task.url.substring(0, 47) + '...' : task.url;
+
+                let thumbnailContent;
+                if (task.thumbnail) {{
+                    const escThumb = String(task.thumbnail).replace(/\"/g, '&quot;');
+                    thumbnailContent = `<img class=\"queue-item-thumbnail-image\" src=\"${escThumb}\" alt=\"影片縮圖\" onerror=\"this.style.display='none';this.parentNode.innerHTML='<div class=\\'queue-item-thumbnail-text\\'>找不到縮圖</div>'\">`;
+                }} else {{
+                    thumbnailContent = `<div class=\"queue-item-thumbnail-text\">找不到縮圖</div>`;
+                }}
+
+                itemDiv.innerHTML = `
+                    <div class="queue-item-thumbnail">
+                        ${{thumbnailContent}}
+                    </div>
+                    <div class="queue-item-info">
+                        <div class="queue-item-title">${task.title}</div>
+                        <div class="queue-item-meta">${task.uploader} · ${task.duration}</div>
+                        <div class="queue-item-url">
+                            <a href="${task.url}" target="_blank" title="${task.url}">
+                                ${{displayUrl}}
+                            </a>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${Number(task.progress||0)}%;"></div>
+                        </div>
+                        <div class="progress-text">${task.status} (${Number(task.progress||0).toFixed(1)}%)</div>
+                    </div>
+                    <div class="queue-item-actions">
+                        <button class="queue-item-action-btn" onclick="openFileLocation(${task.id})" disabled>
+                            <img src="{FOLDER_ICON}" alt="開啟檔案位置">
+                        </button>
+                    </div>
+                `;
+                queueList.appendChild(itemDiv);
+
+                // 如果不是最後一個項目，添加分隔線
+                if (index < downloadQueue.length - 1) {{
+                    const separatorDiv = document.createElement('div');
+                    separatorDiv.classList.add('queue-separator');
+                    queueList.appendChild(separatorDiv);
+                }}
+            }});
+        }}
+
+        // **重要：新增一個函數來更新特定任務的進度**
+        // 這個函數將由 Python 後端呼叫（透過 pywebview.api.update_progress）
+        window.updateDownloadProgress = function(taskId, progress, status = '下載中', message = '', filePath = '') {{
+            const taskIndex = downloadQueue.findIndex(task => task.id === taskId);
+            if (taskIndex !== -1) {{
+                downloadQueue[taskIndex].progress = progress;
+                downloadQueue[taskIndex].status = status;
+                if (filePath) {{
+                    downloadQueue[taskIndex].filePath = filePath; // 更新檔案路徑
+                }}
+                // 如果有額外訊息，可以顯示
+                if (message) {{
+                    console.log(`Task ${{taskId}} update: ${{message}}`);
+                }}
+                // 找到對應的 DOM 元素並更新
+                const itemDiv = document.querySelector(`.queue-item[data-task-id="${{taskId}}"]`);
+                if (itemDiv) {{
+                    itemDiv.querySelector('.progress-bar').style.width = `${{progress}}%`;
+                    itemDiv.querySelector('.progress-text').innerText = `${{status}} (${progress.toFixed(1)}%)`;
+                    // 只有當狀態為「已完成」且有 filePath 時才啟用按鈕
+                    const openFolderBtn = itemDiv.querySelector('.queue-item-action-btn');
+                    if (status === '已完成' && downloadQueue[taskIndex].filePath) {{ // 檢查 task.filePath
+                        openFolderBtn.disabled = false; // 啟用按鈕
+                        openFolderBtn.style.opacity = '1';
+                        openFolderBtn.style.cursor = 'pointer';
+                    }} else {{
+                        openFolderBtn.disabled = true; // 禁用按鈕
+                        openFolderBtn.style.opacity = '0.5'; // 變灰
+                        openFolderBtn.style.cursor = 'not-allowed';
+                    }}
+                }}
+            }}
+        }};
+
+        /**
+         * 開啟下載檔案所在位置。
+         * @param {{number}} taskId - 任務ID。
+         */
+        function openFileLocation(taskId) {{
+            const task = downloadQueue.find(t => t.id === taskId);
+            if (!task) {{
+                console.error("找不到任務:", taskId);
+                showModal("錯誤", "找不到指定的下載任務。");
+                return;
+            }}
+            
+            if (!task.filePath) {{
+                console.error("任務沒有檔案路徑:", task);
+                showModal("錯誤", "檔案路徑不可用。");
+                return;
+            }}
+            
+            // 傳遞實際的檔案路徑給後端
+            window.pywebview.api.open_file_location(task.filePath)
+                .then(result => {{
+                    console.log("開啟檔案位置結果:", result);
+                }})
+                .catch(error => {{
+                    console.error("開啟檔案位置時出錯:", error);
+                    showModal("錯誤", "無法開啟檔案位置。");
+                }});
+        }}
+
+
+
+
+
+        // 點擊外部關閉下拉選單
+        document.addEventListener('click', function(event) {{
+            const qualitySelect = document.getElementById('quality-select');
+            const formatSelect = document.getElementById('format-select');
+            
+            // 只有在影片選擇模態視窗才處理畫質和格式選擇的關閉
+            const videoModal = document.getElementById('video-modal-bg');
+            if (videoModal && videoModal.classList.contains('show')) {{
+                if (qualitySelect && !qualitySelect.contains(event.target)) {{
+                    closeSelect('quality-select');
+                }}
+                if (formatSelect && !formatSelect.contains(event.target)) {{
+                    closeSelect('format-select');
+                }}
+            }}
+        }});
+
+        // 首次載入時，綁定Enter事件並顯示主頁
+        document.addEventListener('DOMContentLoaded', () => {{
+            const homeInput = document.getElementById('video-url');
+            if (homeInput) {{
+                homeInput.addEventListener('keypress', (e) => {{
+                    if (e.key === 'Enter') {{
+                        downloadVideo();
+                    }}
+                }});
+            }}
+            const queueInput = document.getElementById('queue-video-url');
+            if (queueInput) {{
+                queueInput.addEventListener('keypress', (e) => {{
+                    if (e.key === 'Enter') {{
+                        downloadVideoFromQueue();
+                    }}
+                }});
+            }}
+            showPage('home');
+        }});
+    </script>
+</body>
+</html>
