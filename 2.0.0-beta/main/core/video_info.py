@@ -9,13 +9,13 @@ import math
 import hashlib
 import urllib.request
 import yt_dlp
-from utils.logger import debug_console, error_console
+from utils.logger import debug_console, info_console, error_console
 from utils.file_utils import safe_path_join
 
 def extract_video_info(url, root_dir):
     """提取影片資訊"""
     try:
-        debug_console(f"開始提取影片資訊: {url}")
+        info_console(f"開始提取影片資訊: {url}")
         
         # 設定 FFMPEG 路徑
         ffmpeg_path = os.path.join(root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
@@ -35,7 +35,7 @@ def extract_video_info(url, root_dir):
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=False)
-        debug_console("yt-dlp.extract_info 結束")
+        info_console("影片資訊取得完成")
 
         title = info_dict.get('title', '無標題影片')
         uploader = info_dict.get('uploader', '未知上傳者')

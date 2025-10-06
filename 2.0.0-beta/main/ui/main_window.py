@@ -13,7 +13,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QIcon
 from core.api import Api
 from config.constants import APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
-from utils.logger import debug_console, error_console
+from utils.logger import debug_console, info_console, error_console
 from utils.file_utils import get_assets_path
 from ui.html_content import get_html_content
 
@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         try:
             # 使用 html_content.py 中的邏輯
             html_str = get_html_content()
-            debug_console(f"載入 HTML 內容，長度: {len(html_str)}")
+            info_console(f"載入 HTML 內容，長度: {len(html_str)}")
             
             # 設定基礎 URL
             base_url = QUrl.fromLocalFile(self.root_dir + os.sep)
@@ -180,7 +180,7 @@ class MainWindow(QMainWindow):
                 f"(function(){{ if (window.__onVideoInfo){{ window.__onVideoInfo({safe_info}); }} }})();"
             )
         except Exception as e:
-            debug_console(f"發送影片資訊失敗: {e}")
+            error_console(f"發送影片資訊失敗: {e}")
     
     def on_info_error(self, error_msg):
         """影片資訊錯誤"""
@@ -191,16 +191,16 @@ class MainWindow(QMainWindow):
                 f"(function(){{ if (window.__onVideoInfoError){{ window.__onVideoInfoError({safe_error}); }} }})();"
             )
         except Exception as e:
-            debug_console(f"發送錯誤資訊失敗: {e}")
+            error_console(f"發送錯誤資訊失敗: {e}")
     
     def start_background_version_check(self):
         """啟動背景版本檢查"""
         def check_version_in_background():
             try:
-                debug_console("在背景執行緒中檢查 yt-dlp 版本...")
+                info_console("在背景執行緒中檢查 yt-dlp 版本...")
                 self.api_instance.check_and_update_ytdlp()
             except Exception as e:
-                debug_console(f"背景版本檢查失敗: {e}")
+                error_console(f"背景版本檢查失敗: {e}")
         
         import threading
         version_check_thread = threading.Thread(target=check_version_in_background, daemon=True)
@@ -209,7 +209,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """視窗關閉事件"""
         try:
-            debug_console("主視窗即將關閉，正在清理資源...")
+            info_console("主視窗即將關閉，正在清理資源...")
             if self.api_instance:
                 self.api_instance.close_settings()
             event.accept()

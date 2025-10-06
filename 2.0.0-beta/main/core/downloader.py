@@ -7,7 +7,7 @@
 import os
 import threading
 import yt_dlp
-from utils.logger import debug_console, error_console
+from utils.logger import debug_console, info_console, error_console
 from utils.file_utils import safe_path_join
 
 class Downloader:
@@ -20,19 +20,24 @@ class Downloader:
         self.complete_callback = complete_callback
         self.active_downloads = {}
     
-    def start_download(self, task_id, url, quality, format_type):
+    def start_download(self, task_id, url, quality, format_type, downloads_dir=None):
         """開始下載"""
         def download_task():
             try:
-                debug_console(f"【任務{task_id}】開始下載: {url}")
+                info_console(f"【任務{task_id}】開始下載: {url}")
                 
                 # 設定下載選項
-                ydl_opts = self._build_download_options(quality, format_type)
+                ydl_opts = self._build_download_options(quality, format_type, downloads_dir)
                 
                 # 設定進度回調（注入 task_id，便於前端對應）
+                last_filename = {'path': ''}
                 def hook(d):
                     try:
                         d['task_id'] = task_id
+                        # 記錄最後檔名以便完成時回傳
+                        fn = d.get('filename')
+                        if fn:
+                            last_filename['path'] = fn
                     except Exception:
                         pass
                     self._progress_hook(d, task_id)
@@ -41,11 +46,15 @@ class Downloader:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
                 
-                debug_console(f"【任務{task_id}】下載完成")
+                info_console(f"【任務{task_id}】下載完成")
                 
                 # 通知完成
                 if self.complete_callback:
-                    self.complete_callback(task_id, url)
+                    try:
+                        final_path = last_filename['path'] if last_filename['path'] else None
+                    except Exception:
+                        final_path = None
+                    self.complete_callback(task_id, url, file_path=final_path)
                     
             except Exception as e:
                 error_console(f"【任務{task_id}】下載失敗: {e}")
@@ -57,13 +66,21 @@ class Downloader:
         thread.start()
         self.active_downloads[task_id] = thread
     
-    def _build_download_options(self, quality, format_type):
+    def _build_download_options(self, quality, format_type, downloads_dir=None):
         """建構下載選項"""
         # 設定 FFMPEG 路徑
         ffmpeg_path = os.path.join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
+        # 解析下載目錄
+        target_dir = downloads_dir or self.downloads_dir
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except Exception as e:
+            error_console(f"建立下載目錄失敗: {e}")
+            # 回退到預設 downloads 目錄
+            target_dir = self.downloads_dir
         
         ydl_opts = {
-            'outtmpl': os.path.join(self.downloads_dir, '%(title)s.%(ext)s'),
+            'outtmpl': os.path.join(target_dir, '%(title)s.%(ext)s'),
             'format': self._get_format_selector(quality, format_type),
             'ffmpeg_location': ffmpeg_path,
             'quiet': True,

@@ -14,7 +14,8 @@ class SettingsManager:
     
     def __init__(self, root_dir):
         self.root_dir = root_dir
-        self.settings_file = os.path.join(root_dir, 'settings.json')
+        # 與設定視窗保持一致，統一使用 main/settings.json
+        self.settings_file = os.path.join(root_dir, 'main', 'settings.json')
     
     def load_settings(self):
         """載入設定"""

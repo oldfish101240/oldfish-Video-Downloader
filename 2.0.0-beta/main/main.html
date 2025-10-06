@@ -1536,24 +1536,24 @@
 
                 itemDiv.innerHTML = `
                     <div class="queue-item-thumbnail">
-                        ${{thumbnailContent}}
+                        ${thumbnailContent}
                     </div>
                     <div class="queue-item-info">
                         <div class="queue-item-title">${task.title}</div>
                         <div class="queue-item-meta">${task.uploader} · ${task.duration}</div>
                         <div class="queue-item-url">
                             <a href="${task.url}" target="_blank" title="${task.url}">
-                                ${{displayUrl}}
+                                ${displayUrl}
                             </a>
                         </div>
                         <div class="progress-bar-container">
-                            <div class="progress-bar" style="width: ${Number(task.progress||0)}%;"></div>
+                            <div class="progress-bar" style="width: ${task.progress}%;"></div>
                         </div>
-                        <div class="progress-text">${task.status} (${Number(task.progress||0).toFixed(1)}%)</div>
+                        <div class="progress-text">${task.status} (${task.progress.toFixed(1)}%)</div>
                     </div>
                     <div class="queue-item-actions">
                         <button class="queue-item-action-btn" onclick="openFileLocation(${task.id})" disabled>
-                            <img src="{FOLDER_ICON}" alt="開啟檔案位置">
+                            <img src="assets/folder.png" alt="開啟檔案位置">
                         </button>
                     </div>
                 `;
@@ -1580,13 +1580,13 @@
                 }}
                 // 如果有額外訊息，可以顯示
                 if (message) {{
-                    console.log(`Task ${{taskId}} update: ${{message}}`);
+                    console.log(`Task ${taskId} update: ${message}`);
                 }}
                 // 找到對應的 DOM 元素並更新
-                const itemDiv = document.querySelector(`.queue-item[data-task-id="${{taskId}}"]`);
+                const itemDiv = document.querySelector(`.queue-item[data-task-id="${taskId}"]`);
                 if (itemDiv) {{
-                    itemDiv.querySelector('.progress-bar').style.width = `${{progress}}%`;
-                    itemDiv.querySelector('.progress-text').innerText = `${{status}} (${progress.toFixed(1)}%)`;
+                    itemDiv.querySelector('.progress-bar').style.width = `${progress}%`;
+                    itemDiv.querySelector('.progress-text').innerText = `${status} (${progress.toFixed(1)}%)`;
                     // 只有當狀態為「已完成」且有 filePath 時才啟用按鈕
                     const openFolderBtn = itemDiv.querySelector('.queue-item-action-btn');
                     if (status === '已完成' && downloadQueue[taskIndex].filePath) {{ // 檢查 task.filePath

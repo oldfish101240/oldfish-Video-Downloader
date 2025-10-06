@@ -11,7 +11,8 @@ import threading
 import subprocess
 import yt_dlp
 from PySide6.QtCore import QObject, Slot, Signal
-from utils.logger import debug_console, error_console
+from PySide6.QtWidgets import QFileDialog
+from utils.logger import debug_console, info_console, error_console
 from utils.file_utils import safe_path_join
 from config.settings import SettingsManager
 from core.video_info import extract_video_info
@@ -66,7 +67,7 @@ class Api(QObject):
     @Slot(str, result='QVariant')
     def get_video_info(self, url):
         """獲取影片資訊"""
-        debug_console(f"取得影片資訊: {url}")
+        info_console(f"取得影片資訊: {url}")
         try:
             # 直接使用 yt-dlp 獲取資訊，與原始版本一致
             import yt_dlp
@@ -142,7 +143,7 @@ class Api(QObject):
             }
             
         except Exception as e:
-            debug_console(f"獲取影片資訊失敗: {e}")
+            error_console(f"獲取影片資訊失敗: {e}")
             return None
     
     def _eval_js(self, script):
@@ -179,7 +180,7 @@ class Api(QObject):
         try:
             self.page.runJavaScript(script)
         except Exception as e:
-            debug_console(f"JavaScript執行失敗: {e}")
+            error_console(f"JavaScript執行失敗: {e}")
     
     def _download_progress_hook(self, task_id, d):
         """下載進度回調"""
@@ -194,15 +195,20 @@ class Api(QObject):
                 percent = 0
                 status = "下載中 (未知進度)"
             debug_console(f"[進度] 任務{task_id}: {percent:.1f}% - {status}")
-            self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status)
+            # 傳遞當前檔案路徑（若可得）以保持與舊版一致
+            file_arg = d.get('filename') or ''
+            safe_file_arg = (file_arg or '').replace('\\', '/')
+            self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status, '', safe_file_arg)
         elif d['status'] == 'finished':
             try:
-                debug_console(f"[進度] 任務{task_id}: 100.0% - 已完成")
-                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成")
+                info_console(f"任務 {task_id} 已完成")
+                file_arg = d.get('filename') or ''
+                safe_file_arg = (file_arg or '').replace('\\', '/')
+                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file_arg)
             except Exception as e:
-                debug_console(f"完成進度回報失敗: {e}")
+                error_console(f"完成進度回報失敗: {e}")
     
-    def _notify_download_complete_safely(self, task_id, url, error=None):
+    def _notify_download_complete_safely(self, task_id, url, error=None, file_path=None):
         """安全地通知下載完成"""
         try:
             with self._lock:
@@ -213,6 +219,9 @@ class Api(QObject):
             if error:
                 self._safe_eval_js("window.onDownloadError", task_id, error)
             else:
+                # 與舊版一致，將最終檔案路徑傳給前端以啟用「開啟資料夾」按鈕
+                safe_file = (file_path or '').replace('\\', '/')
+                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file)
                 self._safe_eval_js("window.onDownloadComplete", task_id)
                 
                 # 發送通知
@@ -222,23 +231,72 @@ class Api(QObject):
                     
         except Exception as e:
             debug_console(f"通知下載完成失敗: {e}")
+
+    @Slot(result=str)
+    def choose_folder(self):
+        """開啟 Windows 檔案總管的資料夾選擇對話方塊，回傳所選路徑（空字串代表取消）"""
+        try:
+            # 使用原生對話框
+            options = QFileDialog.Options()
+            # 注意：PySide6 預設會用 native dialog，這裡保持預設即可
+            directory = QFileDialog.getExistingDirectory(None, '選擇資料夾', self.settings_manager.get('downloadDir', self.root_dir), QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+            if directory:
+                return directory
+            return ''
+        except Exception as e:
+            error_console(f"選擇資料夾失敗: {e}")
+            return ''
     
     @Slot(str, result=str)
     def download(self, url):
         """下載按鈕被點擊"""
-        debug_console(f"下載按鈕被點擊，網址: {url}")
+        info_console(f"收到下載請求: {url}")
         return "下載功能尚未實作"
     
     @Slot(int, str, str, str, result=str)
     def start_download(self, task_id, url, quality, format_type):
         """開始下載"""
         try:
-            debug_console(f"開始下載任務 {task_id}: {url}")
-            self.downloader.start_download(task_id, url, quality, format_type)
+            info_console(f"開始下載任務 {task_id}: {url}")
+            # 固定使用預設下載目錄（取消自訂下載位置）
+            resolved_download_dir = os.path.join(self.root_dir, 'downloads')
+            try:
+                os.makedirs(resolved_download_dir, exist_ok=True)
+            except Exception as e:
+                error_console(f"創建下載資料夾失敗，改用預設: {e}")
+                resolved_download_dir = os.path.join(self.root_dir, 'downloads')
+                os.makedirs(resolved_download_dir, exist_ok=True)
+
+            self.downloader.start_download(task_id, url, quality, format_type, downloads_dir=resolved_download_dir)
             return "下載已開始"
         except Exception as e:
             error_console(f"開始下載失敗: {e}")
             return f"下載失敗: {e}"
+
+    @Slot(str, result=str)
+    def open_file_location(self, file_path):
+        """開啟檔案所在資料夾（支援 Windows）"""
+        try:
+            if not file_path:
+                return "檔案路徑不可用"
+            # 統一分隔符
+            fp = str(file_path).replace('/', os.sep)
+            if os.path.exists(fp):
+                # 在 Windows 上使用 explorer /select,
+                if sys.platform.startswith('win'):
+                    import subprocess
+                    subprocess.Popen(["explorer", "/select,", fp])
+                    return "已開啟檔案位置"
+                else:
+                    # 其他平台開啟所在資料夾
+                    folder = os.path.dirname(fp)
+                    import subprocess
+                    subprocess.Popen(["xdg-open", folder])
+                    return "已開啟資料夾"
+            return "檔案不存在"
+        except Exception as e:
+            error_console(f"開啟檔案位置失敗: {e}")
+            return f"失敗: {e}"
     
     @Slot(str, result=str)
     def cancel_download(self, task_id):
@@ -253,17 +311,17 @@ class Api(QObject):
     @Slot(result=str)
     def open_settings(self):
         """開啟設定視窗"""
-        debug_console("設定按鈕被點擊")
+        info_console("開啟設定視窗")
         try:
             # 檢查是否已經有設定視窗在運行
             if self.settings_process is not None and self.settings_process.poll() is None:
-                debug_console("設定視窗已經開啟，嘗試調到該視窗")
+                info_console("設定視窗已經開啟，嘗試調到該視窗")
                 return "設定視窗已經開啟"
             
             settings_script = safe_path_join(self.root_dir, 'settings.pyw')
             if os.path.exists(settings_script):
                 self.settings_process = subprocess.Popen([sys.executable, settings_script])
-                debug_console("設定視窗已開啟")
+                info_console("設定視窗已開啟")
                 return "設定視窗已開啟"
             else:
                 error_console("找不到設定腳本")
@@ -278,7 +336,7 @@ class Api(QObject):
         try:
             if self.settings_process and self.settings_process.poll() is None:
                 self.settings_process.terminate()
-                debug_console("設定視窗已關閉")
+                info_console("設定視窗已關閉")
         except Exception as e:
             debug_console(f"關閉設定視窗失敗: {e}")
     
@@ -308,10 +366,22 @@ class Api(QObject):
     
     @Slot(result=str)
     def check_ytdlp_version(self):
-        """檢查 yt-dlp 版本"""
+        """檢查 yt-dlp 版本，並在 debug 中顯示目前與線上最新版本"""
         try:
             current_version = yt_dlp.version.__version__
             debug_console(f"目前 yt-dlp 版本: {current_version}")
+            # 從 PyPI 查最新版本
+            try:
+                import urllib.request, json
+                with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=6) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    latest = data.get('info', {}).get('version') or ''
+                    if latest:
+                        debug_console(f"偵測到的最新 yt-dlp 版本: {latest}")
+                    else:
+                        debug_console("無法解析最新 yt-dlp 版本")
+            except Exception as e2:
+                debug_console(f"取得線上最新版本失敗: {e2}")
             return current_version
         except Exception as e:
             error_console(f"檢查版本失敗: {e}")
@@ -334,6 +404,16 @@ class Api(QObject):
             debug_console("檢查 yt-dlp 版本...")
             current_version = yt_dlp.version.__version__
             debug_console(f"目前版本: {current_version}")
+            # 額外顯示偵測到的最新版本
+            try:
+                import urllib.request, json
+                with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=6) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    latest = data.get('info', {}).get('version') or ''
+                    if latest:
+                        debug_console(f"偵測到的最新版本: {latest}")
+            except Exception as e2:
+                debug_console(f"取得線上最新版本失敗: {e2}")
             
             # 這裡可以實現版本檢查和更新邏輯
             # 目前只是簡單的版本檢查

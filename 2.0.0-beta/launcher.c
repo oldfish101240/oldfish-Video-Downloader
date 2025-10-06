@@ -162,10 +162,8 @@ int is_vsredist_installed() {
 
 // 檢查 WebView2 是否安裝
 int is_webview2_installed() {
-    // 只檢查常見安裝目錄
-    if (file_exists("C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\msedgewebview2.exe")) return 1;
-    if (file_exists("C:\\Program Files\\Microsoft\\EdgeWebView\\Application\\msedgewebview2.exe")) return 1;
-    return 0;
+    // 本應用使用 Qt WebEngine，不依賴 WebView2；為避免誤判，永遠視為已安裝
+    return 1;
 }
 
 // 彈窗詢問是否安裝，並自動下載安裝檔
@@ -177,9 +175,8 @@ void prompt_and_install(const wchar_t* title, const wchar_t* msg, const wchar_t*
     }
 }
 
-int main() {
-    // 設置控制台編碼為 UTF-8
-    SetConsoleOutputCP(CP_UTF8);
+// 使用 GUI 子系統入口（避免彈出主控台視窗）
+int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
 
     // 檢查 VS Redist
     if (!is_vsredist_installed()) {
@@ -187,14 +184,9 @@ int main() {
         prompt_and_install(L"缺少 Visual C++ Redistributable (x64)", msg, L"https://aka.ms/vs/17/release/vc_redist.x64.exe");
         return 1;
     }
-    // 檢查 WebView2
-    if (!is_webview2_installed()) {
-        const wchar_t* msg = L"您的系統未安裝 Microsoft Edge WebView2 Runtime！\n\n是否要自動下載安裝？\n\n按 [是] 會開啟官方下載頁面，安裝完成後請重新啟動本程式。";
-        prompt_and_install(L"缺少 WebView2 Runtime", msg, L"https://go.microsoft.com/fwlink/p/?LinkId=2124703");
-        return 1;
-    }
+    // 本應用採用 Qt WebEngine，不需 WebView2；跳過檢查
 
-    printf("=== OldFish Video Downloader Launcher ===\n\n");
+    // GUI 模式：避免使用 printf 以免依賴主控台
     
     // 定義路徑
     char pythonw_path[MAX_PATH];
@@ -203,18 +195,17 @@ int main() {
     
     // 獲取應用程式路徑
     get_app_path(app_path, sizeof(app_path));
-    printf("Application path: %s\n", app_path);
+    // OutputDebugStringA("launcher: resolved application path\n");
     
-    // 構建完整路徑
+    // 構建完整路徑（以隱藏主控台的 main.pyw 為入口）
     snprintf(pythonw_path, sizeof(pythonw_path), "%s\\main\\python_embed\\pythonw.exe", app_path);
-    snprintf(script_path, sizeof(script_path), "%s\\main\\oldfish_downloader.pyw", app_path);
+    snprintf(script_path, sizeof(script_path), "%s\\main\\main.pyw", app_path);
     
-    printf("Python path: %s\n", pythonw_path);
-    printf("Script path: %s\n", script_path);
+    // OutputDebugStringA("launcher: paths ready\n");
     
     // 檢查檔案是否存在
     if (!file_exists(pythonw_path)) {
-        printf("Error: Cannot find pythonw.exe\n");
+        // OutputDebugStringA("Error: pythonw.exe not found\n");
         char error_msg[1024];
         snprintf(error_msg, sizeof(error_msg), 
                 "錯誤：找不到 pythonw.exe\n\n預期路徑：%s\n\n請確認檔案是否存在。", pythonw_path);
@@ -223,20 +214,20 @@ int main() {
     }
     
     if (!file_exists(script_path)) {
-        printf("Error: Cannot find oldfish_downloader.pyw\n");
+        // OutputDebugStringA("Error: main.pyw not found\n");
         char error_msg[1024];
         snprintf(error_msg, sizeof(error_msg), 
-                "錯誤：找不到 oldfish_downloader.pyw\n\n預期路徑：%s\n\n請確認檔案是否存在。", script_path);
+                "錯誤：找不到 main.pyw\n\n預期路徑：%s\n\n請確認檔案是否存在。", script_path);
         show_error(error_msg);
         return 1;
     }
     
-    printf("File check passed, starting Python process...\n");
+    // OutputDebugStringA("launcher: starting pythonw\n");
     
     // 構建命令
     char command[2048];
     snprintf(command, sizeof(command), "\"%s\" \"%s\"", pythonw_path, script_path);
-    printf("Execute command: %s\n", command);
+    // OutputDebugStringA("launcher: CreateProcessA command built\n");
     
     // 執行命令
     STARTUPINFOA si;
@@ -262,7 +253,7 @@ int main() {
         &pi             // 進程資訊
     )) {
         DWORD error = GetLastError();
-        printf("Error: Cannot start process, error code: %lu\n", error);
+        // OutputDebugStringA("launcher: CreateProcessA failed\n");
         
         char error_msg[1024];
         char error_reason[256];
@@ -301,28 +292,27 @@ int main() {
         return 1;
     }
     
-    printf("Python process started successfully! Process ID: %lu\n", pi.dwProcessId);
-    printf("Waiting for Python window to appear...\n");
+    // OutputDebugStringA("launcher: process started\n");
     
     // 等待一下讓 Python 程式有時間啟動
     Sleep(2000);
     
     // 檢查進程是否還在運行
     if (is_process_running(pi.dwProcessId)) {
-        printf("Python process is still running.\n");
+        // OutputDebugStringA("launcher: python running\n");
     } else {
-        printf("Warning: Python process may have exited immediately.\n");
+        // OutputDebugStringA("launcher: python exited early\n");
     }
-    printf("Waiting for Python window to appear...\n");
+    // OutputDebugStringA("launcher: waiting again\n");
     
     // 等待一下讓 Python 程式有時間啟動
     Sleep(2000);
     
     // 檢查進程是否還在運行
     if (is_process_running(pi.dwProcessId)) {
-        printf("Python process is still running.\n");
+        // OutputDebugStringA("launcher: python still running\n");
     } else {
-        printf("Warning: Python process may have exited immediately.\n");
+        // OutputDebugStringA("launcher: python exited early (2)\n");
     }
     
     // 關閉進程控制碼（但保留執行緒控制碼用於監控）
@@ -334,6 +324,6 @@ int main() {
     // 關閉執行緒控制碼
     if (pi.hThread) CloseHandle(pi.hThread);
     
-    printf("Launcher exited.\n");
+    // OutputDebugStringA("launcher: exited\n");
     return 0;
 }

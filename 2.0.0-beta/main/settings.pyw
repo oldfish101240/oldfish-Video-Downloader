@@ -37,7 +37,8 @@ class SettingsApi(QObject):
             debug_console("載入設定中...")
             
             default_settings = {
-                'enableNotifications': True
+                'enableNotifications': True,
+                'downloadDir': 'downloads'
             }
             
             if os.path.exists(self.settings_file):
@@ -56,7 +57,8 @@ class SettingsApi(QObject):
         except Exception as e:
             debug_console(f"載入設定失敗: {e}")
             return {
-                'enableNotifications': True
+                'enableNotifications': True,
+                'downloadDir': 'downloads'
             }
     
     @Slot(dict)
@@ -99,14 +101,16 @@ class SettingsApi(QObject):
         try:
             debug_console("重設為預設值")
             default_settings = {
-                'enableNotifications': True
+                'enableNotifications': True,
+                'downloadDir': 'downloads'
             }
             debug_console(f"預設設定: {default_settings}")
             return default_settings
         except Exception as e:
             debug_console(f"重設為預設值失敗: {e}")
             return {
-                'enableNotifications': True
+                'enableNotifications': True,
+                'downloadDir': 'downloads'
             }
 
 
@@ -418,6 +422,8 @@ class SettingsWindow(QMainWindow):
                     </label>
                 </div>
             </div>
+
+            
             
             <div class="actions">
                 <button class="btn" onclick="resetSettings()">重設</button>
@@ -434,7 +440,8 @@ class SettingsWindow(QMainWindow):
             
             <script>
                 let currentSettings = {
-                    enableNotifications: true
+                    enableNotifications: true,
+                    downloadDir: 'downloads'
                 };
                 
                 function loadSettings() {
@@ -470,6 +477,10 @@ class SettingsWindow(QMainWindow):
                     if (notificationCheckbox) {
                         notificationCheckbox.checked = currentSettings.enableNotifications || true;
                     }
+                    const downloadDirInput = document.getElementById('download-dir');
+                    if (downloadDirInput) {
+                        downloadDirInput.value = currentSettings.downloadDir || 'downloads';
+                    }
                 }
                 
                 
@@ -495,7 +506,27 @@ class SettingsWindow(QMainWindow):
                     if (notificationCheckbox) {
                         currentSettings.enableNotifications = notificationCheckbox.checked;
                     }
+                    const downloadDirInput = document.getElementById('download-dir');
+                    if (downloadDirInput && downloadDirInput.value) {
+                        currentSettings.downloadDir = downloadDirInput.value.trim();
+                    }
                 }
+
+                function waitForBridge(timeoutMs = 8000) {
+                    return new Promise((resolve, reject) => {
+                        const t0 = Date.now();
+                        (function loop(){
+                            const bridge = (window.pywebview && window.pywebview.api) ? window.pywebview.api : window.api;
+                            if (bridge && typeof bridge.choose_folder === 'function') {
+                                return resolve(bridge);
+                            }
+                            if (Date.now() - t0 > timeoutMs) return reject(new Error('API 尚未準備好'));
+                            setTimeout(loop, 100);
+                        })();
+                    });
+                }
+
+                // chooseFolder 已移除（取消自訂下載位置）
                 
                 function resetSettings() {
                     if (confirm('重設為預設值？')) {

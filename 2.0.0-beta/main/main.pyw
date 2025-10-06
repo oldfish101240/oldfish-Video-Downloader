@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-主程式入口點
+主程式入口點(隱藏 console)
 """
 
 import os
@@ -17,7 +17,7 @@ if python_embed_dir not in sys.path:
     sys.path.insert(0, python_embed_dir)
 
 from ui.main_window import create_app
-from utils.logger import debug_console, error_console
+from utils.logger import debug_console, info_console, error_console
 from utils.file_utils import ensure_directories
 
 def main():
@@ -28,8 +28,8 @@ def main():
         if not os.path.isabs(ROOT_DIR):
             ROOT_DIR = os.path.abspath(ROOT_DIR)
         
-        debug_console("啟動 oldfish影片下載器...")
-        debug_console(f"根目錄: {ROOT_DIR}")
+        info_console("啟動 oldfish影片下載器...")
+        info_console(f"根目錄: {ROOT_DIR}")
         
         # 確保必要的目錄存在
         ensure_directories(ROOT_DIR)

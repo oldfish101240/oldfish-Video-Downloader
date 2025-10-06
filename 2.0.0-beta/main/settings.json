@@ -1,3 +1,4 @@
 {
-  "enableNotifications": false
+  "downloadDir": "downloads",
+  "enableNotifications": true
 }
