@@ -73,7 +73,53 @@ def compare_versions(version1, version2):
 debug_console("啟動 oldfish影片下載器...")
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+# 確保ROOT_DIR是絕對路徑，適應不同的執行環境
+if not os.path.isabs(ROOT_DIR):
+    ROOT_DIR = os.path.abspath(ROOT_DIR)
 info_console(f"根目錄: {ROOT_DIR}")
+
+# 確保必要的目錄存在
+def ensure_directories():
+    """確保必要的目錄存在"""
+    try:
+        downloads_dir = os.path.join(ROOT_DIR, 'downloads')
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        thumb_cache_dir = os.path.join(ROOT_DIR, 'thumb_cache')
+        os.makedirs(thumb_cache_dir, exist_ok=True)
+        
+        debug_console("必要目錄已確保存在")
+    except OSError as e:
+        error_console(f"創建必要目錄失敗: {e}")
+
+# 在程式啟動時確保目錄存在
+ensure_directories()
+
+def safe_path_join(*paths):
+    """安全地連接路徑，處理相對路徑和絕對路徑"""
+    try:
+        # 過濾掉空值和None
+        valid_paths = [str(p) for p in paths if p is not None and str(p).strip()]
+        if not valid_paths:
+            return ''
+        
+        # 如果第一個路徑是絕對路徑，從它開始
+        if os.path.isabs(valid_paths[0]):
+            result = valid_paths[0]
+            for path in valid_paths[1:]:
+                result = os.path.join(result, path)
+        else:
+            # 從ROOT_DIR開始
+            result = ROOT_DIR
+            for path in valid_paths:
+                result = os.path.join(result, path)
+        
+        # 標準化路徑
+        return os.path.normpath(result)
+    except (OSError, TypeError, ValueError) as e:
+        debug_console(f"路徑處理失敗: {e}")
+        # 後備方案：返回基本路徑
+        return os.path.join(ROOT_DIR, 'downloads')
 
 ICON_TEXT = "assets/icon_text.png"
 MENU_ICON = "assets/menu.png"
@@ -113,8 +159,18 @@ HTML = fr"""
     <style>
         :root {{
             --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+            --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
             transition: all 0.25s var(--ease-default);
         }}
+        
+        /* 基本動畫關鍵幀 */
+        @keyframes spin {{
+            from {{ transform: rotate(0deg); }}
+            to {{ transform: rotate(360deg); }}
+        }}
+        
         body {{
             margin: 0;
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -158,7 +214,7 @@ HTML = fr"""
             flex-direction: column;
             align-items: flex-start;
             padding-top: 20px;
-            transition: width 0.2s ease-in-out;
+            transition: width 0.3s var(--ease-smooth);
             overflow: hidden;
         }}
         .sidebar.collapsed {{
@@ -186,8 +242,30 @@ HTML = fr"""
             align-items: center;
             border-radius: 12px;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.3s var(--ease-smooth);
             padding-left: 12px;
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .sidebar .nav-item::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s;
+        }}
+        
+        .sidebar .nav-item:hover::before {{
+            left: 100%;
+        }}
+        
+        .sidebar .nav-item:hover {{
+            transform: translateX(4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }}
         .sidebar .nav-item.selected {{
             background: #2ecc71;
@@ -245,11 +323,20 @@ HTML = fr"""
             padding: 0 14px;
             font-size: 16px;
             outline: none;
+            transition: all 0.3s var(--ease-smooth);
+            position: relative;
+        }}
+        
+        .search-input::placeholder {{
+            transition: opacity 0.3s ease;
+        }}
+        
+        .search-input:focus::placeholder {{
+            opacity: 0.7;
         }}
         .search-input:focus {{
             border-color: #2ecc71;
             box-shadow: 0 0 0 3px rgba(39, 174, 96, 0.3);
-            transition: box-shadow 0.2s ease, border-color 0.2s ease;
         }}
         .download-btn {{
             margin-left: 12px;
@@ -262,13 +349,38 @@ HTML = fr"""
             font-size: 16px;
             cursor: pointer;
             font-weight: bold;
-            transition: transform 0.15s ease-in-out, background 0.2s, box-shadow 0.2s;
+            transition: all 0.3s var(--ease-spring);
             box-shadow: 0 2px 8px #111;
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .download-btn::before {{
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }}
+        
+        .download-btn:active::before {{
+            width: 300px;
+            height: 300px;
         }}
         .download-btn:hover {{
             background: #219150;
-            transform: scale(1.03);
-            box-shadow: 0 4px 12px #111;
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+        }}
+        
+        .download-btn:active {{
+            transform: scale(0.98) translateY(0);
+            animation: none;
         }}
         
         .settings-btn {{
@@ -282,12 +394,13 @@ HTML = fr"""
             border-radius: 50%;
             cursor: pointer;
             box-shadow: 0 4px 16px rgba(46, 204, 113, 0.3);
-            transition: all 0.3s ease;
+            transition: all 0.3s var(--ease-smooth);
             z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
         }}
+        
         .settings-btn:hover {{
             background: #27ae60;
             transform: scale(1.1);
@@ -298,6 +411,7 @@ HTML = fr"""
             height: 28px;
             filter: brightness(0) invert(1);
         }}
+        
 
         .hidden {{
             display: none;
@@ -330,6 +444,7 @@ HTML = fr"""
             display: flex;
             opacity: 1;
             transform: scale(1);
+            animation: scaleIn 0.3s var(--ease-spring);
         }}
         .modal {{
             background: #23262f;
@@ -709,6 +824,12 @@ HTML = fr"""
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             position: relative;
             overflow: hidden; /* 防止內容溢出 */
+            transition: all 0.2s ease;
+        }}
+        
+        .queue-item:hover {{
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
         }}
 
         .queue-item-thumbnail {{
@@ -776,15 +897,18 @@ HTML = fr"""
             height: 8px;
             margin-top: 10px;
             overflow: hidden;
+            position: relative;
         }}
 
         .progress-bar {{
             height: 100%;
             width: 0%; /* 初始為0 */
-            background-color: #2ecc71;
+            background: #2ecc71;
             border-radius: 5px;
-            transition: width 0.3s ease; /* 平滑過渡 */
+            transition: width 0.3s var(--ease-smooth);
         }}
+        
+        
 
         .progress-text {{
             font-size: 13px;
@@ -994,6 +1118,7 @@ HTML = fr"""
             var sidebar = document.getElementById('sidebar');
             sidebar.classList.toggle('collapsed');
         }}
+        
 
         /**
          * 顯示指定頁面並更新導航項目選擇。
@@ -1008,30 +1133,36 @@ HTML = fr"""
             const searchRow = document.getElementById('search-row');
             const queuePage = document.getElementById('queue-page');
             const queueSearchRow = document.getElementById('queue-search-row');
-            const queueList = document.getElementById('queue-list'); // Get reference to queue list
-            const settingsBtn = document.getElementById('settings-btn'); // 獲取設定按鈕
+            const queueList = document.getElementById('queue-list');
+            const settingsBtn = document.getElementById('settings-btn');
 
             if (pageName === 'home') {{
                 document.getElementById('nav-home').classList.add('selected');
                 
-                if (titleImg) titleImg.style.display = 'block'; // 顯示主頁元素
-                if (searchRow) searchRow.style.display = 'flex';
-                if (settingsBtn) settingsBtn.style.display = 'block'; // 顯示設定按鈕
+                // 隱藏佇列頁面
+                if (queuePage) queuePage.style.display = 'none';
+                if (queueSearchRow) queueSearchRow.style.display = 'none';
                 
-                if (queuePage) queuePage.style.display = 'none'; // 隱藏其他頁面
-                if (queueSearchRow) queueSearchRow.style.display = 'none'; // 隱藏佇列輸入框
-                if (queueList) queueList.innerHTML = ''; // 清空佇列列表內容
-
+                // 顯示主頁元素
+                if (titleImg) titleImg.style.display = 'block';
+                if (searchRow) searchRow.style.display = 'flex';
+                if (settingsBtn) settingsBtn.style.display = 'block';
+                
+                if (queueList) queueList.innerHTML = '';
+                
             }} else if (pageName === 'queue') {{
                 document.getElementById('nav-queue').classList.add('selected');
                 
-                if (titleImg) titleImg.style.display = 'none'; // 隱藏主頁元素
+                // 隱藏主頁元素
+                if (titleImg) titleImg.style.display = 'none';
                 if (searchRow) searchRow.style.display = 'none';
-                if (settingsBtn) settingsBtn.style.display = 'none'; // 隱藏設定按鈕
+                if (settingsBtn) settingsBtn.style.display = 'none';
                 
-                if (queuePage) queuePage.style.display = 'flex'; // 顯示佇列頁面
-                if (queueSearchRow) queueSearchRow.style.display = 'flex'; // 顯示佇列輸入框
-                renderQueue(); // 渲染佇列內容
+                // 顯示佇列頁面
+                if (queuePage) queuePage.style.display = 'flex';
+                if (queueSearchRow) queueSearchRow.style.display = 'flex';
+                
+                renderQueue();
             }}
         }}
 
@@ -1697,6 +1828,7 @@ class Api(QObject):
         self._lock = threading.Lock() # 添加線程鎖
         self.task_has_postprocessing = {}  # task_id -> bool：是否包含轉檔/後處理
         self.task_in_postprocessing = {}    # task_id -> bool：是否已進入轉檔階段
+        self._cleanup_timer = None  # 用於定期清理資源
 
     # 移除多客戶端探測，回歸 yt-dlp 預設行為以維持穩定性
 
@@ -1818,6 +1950,33 @@ class Api(QObject):
     def _eval_js(self, script):
         # 由於進度回呼在背景執行緒觸發，透過 signal 轉到主執行緒執行
         self.eval_js_requested.emit(script)
+    
+    def _safe_eval_js(self, function_name, *args):
+        """安全地執行JavaScript函數，避免注入攻擊"""
+        try:
+            # 將參數安全地序列化為JSON
+            safe_args = []
+            for arg in args:
+                if isinstance(arg, str):
+                    safe_args.append(json.dumps(arg))
+                elif isinstance(arg, (int, float)):
+                    safe_args.append(str(arg))
+                elif arg is None:
+                    safe_args.append('null')
+                else:
+                    safe_args.append(json.dumps(str(arg)))
+            
+            # 構建安全的JavaScript調用
+            js_call = f"{function_name}({', '.join(safe_args)})"
+            self._eval_js(js_call)
+        except Exception as e:
+            debug_console(f"安全JavaScript執行失敗: {e}")
+            # 後備方案：使用基本的安全調用
+            try:
+                safe_script = f"{function_name}()"
+                self._eval_js(safe_script)
+            except Exception as e2:
+                debug_console(f"後備JavaScript執行也失敗: {e2}")
 
     @Slot(str)
     def _on_eval_js_requested(self, script):
@@ -1851,7 +2010,7 @@ class Api(QObject):
                 status = f"下載中 (未知進度)"
 
             # 將進度更新傳遞給前端
-            self._eval_js(f"window.updateDownloadProgress({task_id}, {percent}, '{status}');")
+            self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status)
             progress_console(f"任務 {task_id}: {status} {percent:.1f}%")
 
         elif d['status'] == 'finished':
@@ -1866,15 +2025,17 @@ class Api(QObject):
 
             # 推導檔案路徑
             filepath = d.get('filepath') or d.get('filename') or ''
-            if filepath and not os.path.isabs(filepath):
-                # 嘗試解析為 downloads 目錄下
-                filepath = os.path.join(ROOT_DIR, 'downloads', filepath)
-            filepath = filepath or ''
+            if filepath:
+                # 使用安全的路徑處理函數
+                filepath = safe_path_join('downloads', filepath)
+            else:
+                filepath = ''
             debug_console(f"【任務{task_id}】最終檔案路徑(可能尚未最終化): {filepath}")
 
             if has_post:
                 # 標記轉檔中，不發送完成通知
-                self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '轉檔中', '', '{filepath.replace(os.sep, '/') if filepath else ''}')")
+                safe_filepath = filepath.replace(os.sep, '/') if filepath else ''
+                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, '轉檔中', '', safe_filepath)
                 try:
                     with self._lock:
                         self.task_in_postprocessing[task_id] = True
@@ -1883,13 +2044,15 @@ class Api(QObject):
                 debug_console(f"【任務{task_id}】含後處理，等待 postprocessor 完成後再通知")
             else:
                 # 無後處理，直接視為完成
-                self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{filepath.replace(os.sep, '/') if filepath else ''}')")
+                safe_filepath = filepath.replace(os.sep, '/') if filepath else ''
+                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, '已完成', '', safe_filepath)
                 end_progress_line()
                 info_console(f"任務 {task_id}: 下載完成 - {d.get('filename', '')}")
                 self._notify_download_complete_safely(d, task_id)
         elif d['status'] == 'error':
             # 下載錯誤
-            self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '錯誤', '{d.get('error', '未知錯誤')}');")
+            error_msg = d.get('error', '未知錯誤')
+            self._safe_eval_js("window.updateDownloadProgress", task_id, 0, '錯誤', error_msg)
             end_progress_line()
             error_console(f"任務 {task_id}: 下載錯誤 - {d.get('error', '未知錯誤')}")
         else:
@@ -1912,13 +2075,21 @@ class Api(QObject):
                 except Exception:
                     in_post = False
                 if in_post:
-                    self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '轉檔中');")
+                    self._safe_eval_js("window.updateDownloadProgress", task_id, 100, '轉檔中')
                 else:
-                    self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '{d['status']}');")
+                    self._safe_eval_js("window.updateDownloadProgress", task_id, 0, d['status'])
                 debug_console(f"任務 {task_id}: 狀態 - {d['status']}")
     def _notify_download_complete_safely(self, d, task_id):
         """統一的完成通知流程，避免重覆與例外中斷。"""
         try:
+            # 確保任務狀態一致性
+            with self._lock:
+                # 標記任務為已完成
+                self.completed_tasks.add(task_id)
+                # 清理後處理狀態
+                self.task_has_postprocessing.pop(task_id, None)
+                self.task_in_postprocessing.pop(task_id, None)
+            
             settings = self.load_settings()
             if not settings.get('enableNotifications', True):
                 return
@@ -2016,7 +2187,16 @@ class Api(QObject):
             if self.settings_process is not None:
                 try:
                     if self.settings_process.poll() is None:  # 檢查進程是否還在運行
+                        # 先嘗試優雅關閉
                         self.settings_process.terminate()
+                        try:
+                            self.settings_process.wait(timeout=5)  # 等待進程結束
+                            debug_console("設定視窗進程已經優雅關閉")
+                        except subprocess.TimeoutExpired:
+                            # 如果優雅關閉超時，強制終止
+                            debug_console("優雅關閉超時，強制終止進程")
+                            self.settings_process.kill()
+                            self.settings_process.wait(timeout=2)
                         info_console("設定視窗已關閉")
                         self.settings_process = None
                         return "設定視窗已關閉"
@@ -2024,14 +2204,14 @@ class Api(QObject):
                         debug_console("設定視窗進程已經結束")
                         self.settings_process = None
                         return "設定視窗已經關閉"
-                except Exception as e:
+                except (OSError, subprocess.SubprocessError) as e:
                     debug_console(f"關閉設定視窗進程失敗: {e}")
                     return f"關閉設定視窗失敗: {e}"
             else:
                 debug_console("沒有設定視窗需要關閉")
                 return "沒有設定視窗需要關閉"
             
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             error_console(f"關閉設定視窗失敗: {e}")
             return f"關閉設定視窗失敗: {e}"
 
@@ -2497,15 +2677,7 @@ class Api(QObject):
                 progressOverlay.appendChild(progressDialog);
                 document.body.appendChild(progressOverlay);
                 
-                // 添加旋轉動畫樣式
-                const style = document.createElement('style');
-                style.textContent = `
-                    @keyframes spin {
-                        from { transform: rotate(0deg); }
-                        to { transform: rotate(360deg); }
-                    }
-                `;
-                document.head.appendChild(style);
+                // 旋轉動畫樣式已在CSS中定義
                 
                 // 提供前端可被後端呼叫來更新進度/提示
                 window.__ofUpdateProgress = function(percent, tipText){
@@ -2929,9 +3101,7 @@ class Api(QObject):
                         file_arg = final_name.replace(os.sep, '/') if final_name else ''
                     except Exception:
                         file_arg = ''
-                    self._eval_js(
-                        f"window.updateDownloadProgress({task_id}, 100, '已完成', '', '{file_arg}')"
-                    )
+                    self._safe_eval_js("window.updateDownloadProgress", task_id, 100, '已完成', '', file_arg)
                     # 通知（統一經由安全方法）
                     self._notify_download_complete_safely({'filename': final_name}, task_id)
                     try:
@@ -2945,11 +3115,10 @@ class Api(QObject):
                 import json
                 try:
                     error_msg = json.dumps(str(e))
-                except:
+                except (TypeError, ValueError, json.JSONDecodeError) as json_error:
+                    debug_console(f"JSON序列化失敗: {json_error}")
                     error_msg = json.dumps("未知錯誤")
-                self._eval_js(
-                    f"window.updateDownloadProgress({task_id}, 0, '錯誤', '下載失敗: ' + {error_msg});"
-                )
+                self._safe_eval_js("window.updateDownloadProgress", task_id, 0, '錯誤', f'下載失敗: {error_msg}')
             finally:
                 # 防止未回報導致前端停在下載中；若已完成則不覆蓋
                 try:
@@ -2965,21 +3134,18 @@ class Api(QObject):
                     except Exception:
                         has_post = False
                     if has_post:
-                        self._eval_js(f"window.updateDownloadProgress({task_id}, 100, '轉檔中');")
+                        self._safe_eval_js("window.updateDownloadProgress", task_id, 100, '轉檔中')
                     else:
-                        self._eval_js(f"window.updateDownloadProgress({task_id}, 0, '已停止');")
+                        self._safe_eval_js("window.updateDownloadProgress", task_id, 0, '已停止')
 
         # 在單獨的執行緒中啟動下載
         download_thread = threading.Thread(target=_download_task, daemon=True)
         download_thread.start()
         self.download_threads[task_id] = download_thread  # 儲存執行緒引用
         
-        # 清理已完成的執行緒引用
-        with self._lock:
-            completed_threads = [tid for tid, thread in self.download_threads.items() 
-                               if not thread.is_alive()]
-            for tid in completed_threads:
-                del self.download_threads[tid]
+        # 定期清理資源（每10個任務清理一次）
+        if len(self.download_threads) % 10 == 0:
+            self._cleanup_resources()
 
         info_console(f"下載任務 {task_id} 已啟動 (URL: {url}, 畫質: {quality}, 格式: {format_type})")
         return f"下載任務 {task_id} 已啟動，請查看佇列頁面。"
@@ -2992,6 +3158,55 @@ class Api(QObject):
             d['task_id'] = task_id # 注入 task_id
             self._download_progress_hook(d)
         return _wrapper_progress_hook
+    
+    def _cleanup_resources(self):
+        """定期清理資源，防止記憶體洩漏"""
+        try:
+            with self._lock:
+                # 清理已完成的線程
+                completed_threads = []
+                for tid, thread in list(self.download_threads.items()):
+                    if not thread.is_alive():
+                        completed_threads.append(tid)
+                
+                for tid in completed_threads:
+                    del self.download_threads[tid]
+                
+                # 清理過期的任務狀態（保留最近100個）
+                if len(self.completed_tasks) > 100:
+                    # 轉為列表並保留最新的100個
+                    completed_list = list(self.completed_tasks)
+                    self.completed_tasks = set(completed_list[-100:])
+                
+                # 清理過期的後處理狀態
+                if len(self.task_has_postprocessing) > 100:
+                    # 保留最近100個
+                    items = list(self.task_has_postprocessing.items())
+                    self.task_has_postprocessing = dict(items[-100:])
+                
+                if len(self.task_in_postprocessing) > 100:
+                    # 保留最近100個
+                    items = list(self.task_in_postprocessing.items())
+                    self.task_in_postprocessing = dict(items[-100:])
+                    
+        except Exception as e:
+            debug_console(f"資源清理失敗: {e}")
+    
+    def __del__(self):
+        """析構函數，確保資源被正確清理"""
+        try:
+            # 清理所有線程
+            with self._lock:
+                for thread in self.download_threads.values():
+                    if thread.is_alive():
+                        # 注意：這裡不能強制終止線程，只能等待
+                        pass
+                self.download_threads.clear()
+                self.completed_tasks.clear()
+                self.task_has_postprocessing.clear()
+                self.task_in_postprocessing.clear()
+        except Exception as e:
+            debug_console(f"析構清理失敗: {e}")
 
     @Slot(str, result=str)
     def open_file_location(self, filepath_ignored):
@@ -2999,14 +3214,23 @@ class Api(QObject):
         開啟設定中的下載資料夾。
         """
         try:
-            # 使用固定的下載目錄
-            target_dir = os.path.join(ROOT_DIR, 'downloads')
+            # 使用安全的路徑處理
+            target_dir = safe_path_join('downloads')
             debug_console(f"開啟下載資料夾: {target_dir}")
             
             # 確保目標資料夾存在
             if not os.path.exists(target_dir):
                 debug_console(f"目標資料夾不存在，創建: {target_dir}")
-                os.makedirs(target_dir, exist_ok=True)
+                try:
+                    os.makedirs(target_dir, exist_ok=True)
+                except OSError as e:
+                    error_console(f"創建下載目錄失敗: {e}")
+                    return f"創建下載目錄失敗: {e}"
+            
+            # 檢查目錄是否可訪問
+            if not os.access(target_dir, os.R_OK):
+                error_console(f"下載目錄無讀取權限: {target_dir}")
+                return f"下載目錄無讀取權限: {target_dir}"
 
             if os.name == 'nt': # Windows
                 subprocess.Popen(f'explorer "{target_dir}"')
@@ -3363,12 +3587,26 @@ if __name__ == '__main__':
             debug_console(f"資訊回傳失敗: {e}")
     def on_info_error(msg):
         try:
-            safe = json.dumps(str(msg))
+            # 改善錯誤信息結構化
+            error_info = {
+                'message': str(msg),
+                'type': type(msg).__name__,
+                'timestamp': time.time()
+            }
+            safe = json.dumps(error_info, ensure_ascii=False)
             view.page().runJavaScript(
                 f"(function(){{ if (window.__onVideoInfoError){{ window.__onVideoInfoError({safe}); }} }})();"
             )
-        except Exception as e:
-            debug_console(f"錯誤回傳失敗: {e}")
+        except (TypeError, ValueError, json.JSONDecodeError) as e:
+            debug_console(f"錯誤信息序列化失敗: {e}")
+            # 後備方案：使用基本字串
+            try:
+                safe = json.dumps(str(msg), ensure_ascii=False)
+                view.page().runJavaScript(
+                    f"(function(){{ if (window.__onVideoInfoError){{ window.__onVideoInfoError({safe}); }} }})();"
+                )
+            except Exception as e2:
+                debug_console(f"後備錯誤回傳也失敗: {e2}")
     api.infoReady.connect(on_info_ready)
     api.infoError.connect(on_info_error)
 
