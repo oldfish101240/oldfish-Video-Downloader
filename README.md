@@ -3,7 +3,7 @@
   <img src="icon.png" alt="oldfish-Video-Downloader Logo" width="100">  
   
   # oldfish影片下載器  [![最新版本](https://img.shields.io/github/v/release/oldfish101240/oldfish-Video-Downloader?label=)](https://github.com/oldfish101240/oldfish-Video-Downloader/releases/latest)
-  一個可以簡單下載YouTube影片的軟體  
+  一個可以輕鬆下載YouTube影片的軟體  
 
   
 
@@ -75,7 +75,14 @@
   A：因為作者本人沒有搭載Windows 7以下的作業系統的電腦，因此無法測試。不過您也可以試試！
   
 - Q：能下載非YouTube網站上的影片嗎？  
-  A：目前此軟體**僅支援於YouTube網站上下載影片**，但我們正在努力支援其他網站，等待好消息！  
+  A：目前此軟體**僅支援於YouTube網站上下載影片**，但我們正在努力支援其他網站，等待好消息！
+
+## 免責聲明
+本軟體僅供**學習與個人研究用途**。  
+使用者需**自行承擔使用本軟體所產生的一切風險與法律責任。**  
+本專案不鼓勵或支持任何違反版權法、網站服務條款或其他相關法規的行為。  
+請勿使用本軟體下載、散佈或重製任何受版權保護之內容。  
+開發者對於使用本軟體所造成的任何損失、法律責任或後果，概不負責。    
 
 ##  版權和許可
 軟體、程式碼及文件版權由[老魚oldfish](https://github.com/oldfish101240)所有。軟體依據 [MIT License](LICENSE)發布。  
