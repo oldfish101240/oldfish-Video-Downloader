@@ -6,7 +6,8 @@
 
 # 應用程式資訊
 APP_NAME = "oldfish影片下載器"
-APP_VERSION = "2.0.0-beta2"
+APP_VERSION = "2.0.0-beta3"
+APP_VERSION_HOME = "2.0.0-beta3 - 2025.10.20"
 
 # 音訊品質選項
 AUDIO_QUALITIES = [

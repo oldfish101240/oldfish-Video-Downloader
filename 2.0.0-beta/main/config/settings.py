@@ -68,3 +68,12 @@ class SettingsManager:
         except Exception as e:
             error_console(f"重設為預設值失敗: {e}")
             return DEFAULT_SETTINGS.copy()
+
+    def get(self, key, default=None):
+        """取得單一設定鍵值，若不存在回傳預設值"""
+        try:
+            settings = self.load_settings()
+            return settings.get(key, default)
+        except Exception as e:
+            error_console(f"讀取設定鍵值失敗: {e}")
+            return default

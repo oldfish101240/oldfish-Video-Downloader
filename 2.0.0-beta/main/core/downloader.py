@@ -79,21 +79,33 @@ class Downloader:
             # 回退到預設 downloads 目錄
             target_dir = self.downloads_dir
         
+        # 正規化輸入
+        fmt_type = (format_type or '').strip()
+        qval = (quality or '').strip()
+        # 若畫質帶有 'p'，僅取數字
+        try:
+            import re
+            m = re.search(r"(\d+)", qval)
+            qnum = m.group(1) if m else qval
+        except Exception:
+            qnum = qval or '1080'
+
         ydl_opts = {
             'outtmpl': os.path.join(target_dir, '%(title)s.%(ext)s'),
-            'format': self._get_format_selector(quality, format_type),
+            'format': self._get_format_selector(qnum, fmt_type),
             'ffmpeg_location': ffmpeg_path,
             'quiet': True,
         }
         
         # 根據格式類型設定額外選項
-        if format_type == "音訊":
+        if fmt_type == "音訊":
             ydl_opts.update({
                 'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': quality,
+                    # 音訊位元率使用純數字，如 '320'
+                    'preferredquality': str(qnum or '320'),
                 }],
             })
         
@@ -101,12 +113,11 @@ class Downloader:
     
     def _get_format_selector(self, quality, format_type):
         """獲取格式選擇器"""
+        # 影片：依高度限制，音訊：無高度限制
         if format_type == "音訊":
-            return f"bestaudio[height<={quality}]/bestaudio/best"
-        elif format_type == "影片":
-            return f"best[height<={quality}]/best"
-        else:  # 影片+音訊
-            return f"best[height<={quality}]/best"
+            return "bestaudio/best"
+        # 預設影片
+        return f"best[height<={quality}]/best"
     
     def _progress_hook(self, d, task_id):
         """進度回調"""

@@ -14,6 +14,7 @@ from PySide6.QtCore import QObject, Slot, Signal
 from PySide6.QtWidgets import QFileDialog
 from utils.logger import debug_console, info_console, error_console
 from utils.file_utils import safe_path_join
+from utils.version_utils import compare_versions
 from config.settings import SettingsManager
 from core.video_info import extract_video_info
 from core.downloader import Downloader
@@ -258,6 +259,28 @@ class Api(QObject):
         """開始下載"""
         try:
             info_console(f"開始下載任務 {task_id}: {url}")
+            # 規範化前端傳入的格式與畫質
+            fmt = (format_type or '').strip().lower()
+            # 對齊下載器分支：將具體副檔名映射為語義分類
+            if fmt in ('mp3', 'aac', 'flac', 'wav', 'audio'):
+                normalized_format = '音訊'
+            else:
+                # 預設走影片路徑（包含 mp4、mkv、webm 或未指定時）
+                normalized_format = '影片'
+
+            # 將畫質轉為下載器可理解的數值或保留音訊位元率
+            q = (quality or '').strip()
+            if normalized_format == '影片':
+                # 允許 '1080p' 或 '1080'，只取數字
+                import re
+                m = re.search(r"(\d+)", q)
+                normalized_quality = m.group(1) if m else '1080'
+            else:
+                # 音訊使用位元率數字（例如 '320'）
+                import re
+                m = re.search(r"(\d+)", q)
+                normalized_quality = m.group(1) if m else '320'
+
             # 固定使用預設下載目錄（取消自訂下載位置）
             resolved_download_dir = os.path.join(self.root_dir, 'downloads')
             try:
@@ -267,7 +290,7 @@ class Api(QObject):
                 resolved_download_dir = os.path.join(self.root_dir, 'downloads')
                 os.makedirs(resolved_download_dir, exist_ok=True)
 
-            self.downloader.start_download(task_id, url, quality, format_type, downloads_dir=resolved_download_dir)
+            self.downloader.start_download(task_id, url, normalized_quality, normalized_format, downloads_dir=resolved_download_dir)
             return "下載已開始"
         except Exception as e:
             error_console(f"開始下載失敗: {e}")
@@ -296,6 +319,32 @@ class Api(QObject):
             return "檔案不存在"
         except Exception as e:
             error_console(f"開啟檔案位置失敗: {e}")
+            return f"失敗: {e}"
+    
+    @Slot(str, result=str)
+    def open_external_link(self, url):
+        """使用系統預設瀏覽器開啟外部連結"""
+        try:
+            if not url:
+                return "連結不可用"
+            
+            # 確保 URL 格式正確
+            if not url.startswith(('http://', 'https://')):
+                url = 'https://' + url
+            
+            # 使用系統預設瀏覽器開啟
+            if sys.platform.startswith('win'):
+                subprocess.Popen(['cmd', '/c', 'start', '', url], 
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            elif sys.platform.startswith('darwin'):  # macOS
+                subprocess.Popen(['open', url])
+            else:  # Linux 和其他 Unix-like 系統
+                subprocess.Popen(['xdg-open', url])
+            
+            info_console(f"已開啟外部連結: {url}")
+            return "已開啟外部連結"
+        except Exception as e:
+            error_console(f"開啟外部連結失敗: {e}")
             return f"失敗: {e}"
     
     @Slot(str, result=str)
@@ -389,35 +438,356 @@ class Api(QObject):
     
     @Slot(result=str)
     def restart_app(self):
-        """重啟應用程式"""
+        """重啟應用程式（舊版等價：優先重啟打包 exe，否則重啟腳本）"""
         try:
-            # 這裡可以實現重啟邏輯
             debug_console("應用程式重啟請求")
-            return "重啟功能尚未實現"
+            # 嘗試啟動同一資料夾上一層的 exe
+            exe_path = os.path.normpath(os.path.join(self.root_dir, os.pardir, 'oldfish影片下載器.exe'))
+            started = False
+            try:
+                if os.path.exists(exe_path):
+                    debug_console(f"嘗試啟動 exe: {exe_path}")
+                    try:
+                        si = None
+                        flags = 0
+                        if sys.platform.startswith('win'):
+                            si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 0
+                            flags |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                        subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path), startupinfo=si, creationflags=flags)
+                    except Exception:
+                        subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path))
+                    started = True
+            except Exception as e:
+                debug_console(f"啟動 exe 失敗: {e}")
+
+            if not started:
+                # 退而求其次：重啟目前 Python 腳本（優先使用內嵌 pythonw，若無則 python.exe，最後使用目前解譯器）
+                pyw = os.path.normpath(os.path.join(self.root_dir, 'main.pyw'))
+                embed_dir = os.path.normpath(os.path.join(self.root_dir, 'python_embed'))
+                pythonw = os.path.normpath(os.path.join(embed_dir, 'pythonw.exe'))
+                python = os.path.normpath(os.path.join(embed_dir, 'python.exe'))
+                candidates = []
+                if os.path.isfile(pythonw):
+                    candidates.append(pythonw)
+                if os.path.isfile(python):
+                    candidates.append(python)
+                # 最後退回目前執行中的解譯器
+                candidates.append(os.path.normpath(sys.executable))
+                try:
+                    for exe in candidates:
+                        try:
+                            exe_path = os.path.normpath(exe)
+                            script_path = os.path.normpath(pyw)
+                            # 額外檢查：檔案存在且大小合理，避免誤選無效檔
+                            if not (os.path.isfile(exe_path) and os.path.isfile(script_path)):
+                                continue
+                            try:
+                                size_ok = os.path.getsize(exe_path) > 1024 * 50
+                            except Exception:
+                                size_ok = True
+                            if not size_ok:
+                                debug_console(f"跳過過小的可執行檔: {exe_path}")
+                                continue
+                            debug_console(f"嘗試以解譯器啟動: {exe_path} {script_path}")
+                            try:
+                                si = None
+                                flags = 0
+                                if sys.platform.startswith('win'):
+                                    si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 0
+                                    flags |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                                subprocess.Popen([exe_path, script_path], cwd=os.path.dirname(script_path), startupinfo=si, creationflags=flags)
+                            except Exception:
+                                subprocess.Popen([exe_path, script_path], cwd=os.path.dirname(script_path))
+                            started = True
+                            break
+                        except Exception as inner_e:
+                            debug_console(f"嘗試使用 {exe} 重啟失敗: {inner_e}")
+                except Exception as e:
+                    debug_console(f"啟動內嵌解譯器失敗: {e}")
+
+            # 關閉目前應用
+            try:
+                from PySide6.QtWidgets import QApplication
+                if started:
+                    QApplication.quit()
+                    return "正在重啟"
+                else:
+                    # 未能啟動新程序，只回報訊息
+                    return "未找到可重啟目標，請手動重新啟動。"
+            except Exception as e:
+                error_console(f"結束目前應用失敗: {e}")
+                return "重啟流程已嘗試，請確認是否已開啟新視窗。"
         except Exception as e:
             error_console(f"重啟失敗: {e}")
             return f"重啟失敗: {e}"
+
+    @Slot()
+    def restartApp(self):
+        """為相容舊版 JS 呼叫名稱，轉呼叫 restart_app"""
+        try:
+            self.restart_app()
+        except Exception as e:
+            error_console(f"restartApp 失敗: {e}")
     
     def check_and_update_ytdlp(self):
-        """檢查並更新 yt-dlp"""
+        """檢查 yt-dlp 是否需要更新；若有新版本則彈出與舊版一致的更新對話框"""
         try:
+            import urllib.request, json
             debug_console("檢查 yt-dlp 版本...")
             current_version = yt_dlp.version.__version__
+            latest = None
+            with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                latest = data.get('info', {}).get('version') or ''
             debug_console(f"目前版本: {current_version}")
-            # 額外顯示偵測到的最新版本
-            try:
-                import urllib.request, json
-                with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=6) as resp:
-                    data = json.loads(resp.read().decode('utf-8'))
-                    latest = data.get('info', {}).get('version') or ''
-                    if latest:
-                        debug_console(f"偵測到的最新版本: {latest}")
-            except Exception as e2:
-                debug_console(f"取得線上最新版本失敗: {e2}")
-            
-            # 這裡可以實現版本檢查和更新邏輯
-            # 目前只是簡單的版本檢查
+            if latest:
+                debug_console(f"偵測到的最新版本: {latest}")
+                try:
+                    needs_update = compare_versions(current_version, latest) < 0
+                except Exception:
+                    needs_update = False
+                if needs_update:
+                    version_info = {
+                        'update_available': True,
+                        'current_version': current_version,
+                        'latest_version': latest
+                    }
+                    self.show_update_dialog(version_info)
             return current_version
         except Exception as e:
             debug_console(f"版本檢查失敗: {e}")
             return None
+
+    @Slot(result='QVariant')
+    def check_ytdlp_update_detail(self):
+        """回傳是否需要更新的詳細資訊（對齊舊版資料結構）"""
+        try:
+            import urllib.request, json
+            current_version = yt_dlp.version.__version__
+            with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                latest_version = data.get('info', {}).get('version') or ''
+            if latest_version:
+                if compare_versions(current_version, latest_version) < 0:
+                    return {
+                        'update_available': True,
+                        'current_version': current_version,
+                        'latest_version': latest_version
+                    }
+                return {
+                    'update_available': False,
+                    'current_version': current_version,
+                    'latest_version': latest_version
+                }
+            return None
+        except Exception as e:
+            error_console(f"檢查版本細節失敗: {e}")
+            return None
+
+    @Slot()
+    def startYtDlpUpdate(self):
+        """由前端呼叫，啟動 yt-dlp 更新（背景執行並回報進度）——對齊舊版行為"""
+        def run_update():
+            try:
+                self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(0, '開始更新…');")
+                # 選擇 python 執行檔：優先內嵌，否則使用目前執行環境
+                python_exe = safe_path_join(self.root_dir, 'python_embed', 'python.exe')
+                if not os.path.exists(python_exe):
+                    python_exe = sys.executable
+                cmd = [python_exe, '-m', 'pip', 'install', '--upgrade', 'yt-dlp', '--disable-pip-version-check']
+                debug_console(f"執行更新命令: {' '.join(cmd)}")
+                # 在 Windows 隱藏 console 啟動 pip 更新
+                si = None
+                flags = 0
+                if sys.platform.startswith('win'):
+                    try:
+                        si = subprocess.STARTUPINFO()
+                        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        si.wShowWindow = 0
+                        flags |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                    except Exception:
+                        si = None
+                with subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    startupinfo=si,
+                    creationflags=flags,
+                ) as proc:
+                    import time
+                    progress = 3
+                    last_emit = 0.0
+                    for line in proc.stdout:
+                        ln = (line or '').strip()
+                        if not ln:
+                            continue
+                        lower = ln.lower()
+                        if 'collecting' in lower or 'downloading' in lower:
+                            self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(undefined, '正在下載套件…');")
+                            progress = max(progress, 10)
+                        elif 'installing collected packages' in lower:
+                            self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(undefined, '正在安裝…');")
+                            progress = max(progress, 60)
+                        elif 'successfully installed' in lower or 'already satisfied' in lower:
+                            progress = max(progress, 95)
+                        now = time.time()
+                        if now - last_emit > 0.2:
+                            progress = min(progress + 1, 97)
+                            self._eval_js(f"window.__ofUpdateProgress && window.__ofUpdateProgress({progress}, undefined);")
+                            last_emit = now
+                    ret = proc.wait()
+                    if ret == 0:
+                        self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
+                        self._eval_js("window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 已成功更新到最新版本！');")
+                    else:
+                        self._eval_js("window.__ofUpdateDone && window.__ofUpdateDone(false, 'yt-dlp 更新失敗，請稍後再試或手動更新。');")
+            except Exception as e:
+                error_console(f"更新執行失敗: {e}")
+                safe_msg = str(e).replace('\\', '/')
+                self._eval_js(f"window.__ofUpdateDone && window.__ofUpdateDone(false, '更新過程發生錯誤：{safe_msg}');")
+        threading.Thread(target=run_update, daemon=True).start()
+
+    def show_update_dialog(self, version_info):
+        """顯示更新對話框（完全對齊舊版樣式與互動）"""
+        try:
+            # 注入舊版的進度對話與完成對話
+            update_js = """
+            window.__executeUpdate = function() {
+                const progressOverlay = document.createElement('div');
+                progressOverlay.id = 'update-progress-overlay';
+                progressOverlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10001; display: flex; align-items: center; justify-content: center; font-family: 'Segoe UI', Arial, sans-serif;`;
+                const progressDialog = document.createElement('div');
+                progressDialog.style.cssText = `background: #23262f; border-radius: 16px; padding: 32px; max-width: 380px; width: 90%; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3); border: 1px solid #444; text-align: center;`;
+                const spinner = document.createElement('div');
+                spinner.style.cssText = `width:56px;height:56px;background:#2ecc71;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px auto;animation:spin 1s linear infinite;box-shadow:0 0 6px #27ae60;`;
+                spinner.innerHTML = '<img src="assets/update.png" alt="updating" style="width:28px;height:28px;object-fit:contain;filter:brightness(10);">';
+                const titleEl = document.createElement('h3');
+                titleEl.style.cssText = 'margin:0 0 10px 0;color:#e5e7eb;font-size:20px;font-weight:bold;';
+                titleEl.textContent = '正在更新 yt-dlp';
+                const tipEl = document.createElement('p');
+                tipEl.style.cssText = 'color:#aaa;margin:0 0 12px 0;font-size:14px;';
+                tipEl.id = 'of-update-tip';
+                tipEl.textContent = '正在準備…';
+                const barWrap = document.createElement('div');
+                barWrap.style.cssText = 'height:8px;background:#181a20;border:1px solid #444;border-radius:6px;overflow:hidden;';
+                const bar = document.createElement('div');
+                bar.id = 'of-update-bar';
+                bar.style.cssText = 'height:100%;width:0%;background:#27ae60;transition:width .2s ease;';
+                barWrap.appendChild(bar);
+                progressDialog.appendChild(spinner);
+                progressDialog.appendChild(titleEl);
+                progressDialog.appendChild(tipEl);
+                progressDialog.appendChild(barWrap);
+                progressOverlay.appendChild(progressDialog);
+                document.body.appendChild(progressOverlay);
+                window.__ofUpdateProgress = function(percent, tipText){
+                    try { if (typeof percent === 'number') { const el = document.getElementById('of-update-bar'); if (el) el.style.width = Math.max(0, Math.min(100, percent)) + '%'; } if (typeof tipText === 'string') { const t = document.getElementById('of-update-tip'); if (t) t.textContent = tipText; } } catch(_){ }
+                };
+                window.__ofUpdateDone = function(success, message){
+                    try { document.getElementById('update-progress-overlay')?.remove(); } catch(_){ }
+                    const overlay = document.createElement('div');
+                    overlay.id = 'update-success-overlay';
+                    overlay.style.cssText = `position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:10002; display:flex; align-items:center; justify-content:center; font-family:'Segoe UI',Arial,sans-serif;`;
+                    const dialog = document.createElement('div');
+                    dialog.style.cssText = `background:#23262f; border-radius:16px; padding:32px; max-width:420px; width:90%; box-shadow:0 4px 24px rgba(0,0,0,.3); border:1px solid #444; text-align:center;`;
+                    const badge = document.createElement('div');
+                    badge.style.cssText = `width:68px; height:68px; border-radius:50%; margin:0 auto 16px auto; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px ${'${success?"#27ae60":"#c0392b"}'}; background:${'${success?"#2ecc71":"#e74c3c"}'}; color:#fff; font-size:28px;`;
+                    const img = document.createElement('img');
+                    img.alt = success ? 'updated' : 'failed';
+                    img.src = success ? 'assets/updated.png' : 'assets/update.png';
+                    img.style.cssText = 'width:36px;height:36px;object-fit:contain;filter:brightness(10);';
+                    badge.appendChild(img);
+                    const title = document.createElement('h3');
+                    title.style.cssText = 'margin:0 0 10px 0; color:#e5e7eb; font-size:20px; font-weight:bold;';
+                    title.textContent = success ? '更新完成' : '更新失敗';
+                    const text = document.createElement('p');
+                    text.style.cssText = 'color:#aaa; margin:0 0 16px 0; font-size:14px;';
+                    text.textContent = message || (success ? 'yt-dlp 已更新至最新版本。' : '請稍後再試或手動更新。');
+                    const hint = document.createElement('p');
+                    hint.style.cssText = 'color:#888; margin:0 0 20px 0; font-size:12px; font-style:italic;';
+                    hint.textContent = success ? '更新已完成，為確保生效，建議重新啟動應用程式。' : '';
+                    const btnRow = document.createElement('div');
+                    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:12px;';
+                    const laterBtn = document.createElement('button');
+                    laterBtn.textContent = success ? '稍後' : '關閉';
+                    laterBtn.style.cssText = 'background:#23262f; color:#e5e7eb; border:1px solid #444; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px;';
+                    laterBtn.onclick = ()=> overlay.remove();
+                    btnRow.appendChild(laterBtn);
+                    if (success) { const restartBtn = document.createElement('button'); restartBtn.textContent = '立即重啟'; restartBtn.style.cssText = 'background:#27ae60; color:#fff; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px; font-weight:bold;'; restartBtn.onclick = ()=> { try { window.api.restartApp(); } catch(_){} }; btnRow.appendChild(restartBtn); }
+                    dialog.appendChild(badge); dialog.appendChild(title); dialog.appendChild(text); if (success) dialog.appendChild(hint); dialog.appendChild(btnRow);
+                    overlay.appendChild(dialog); document.body.appendChild(overlay);
+                };
+                try { window.api.startYtDlpUpdate(); } catch (e) { console.error(e); }
+            };
+            """
+            self._eval_js(update_js)
+
+            # 再注入舊版對話框，帶入具體版本號
+            current_version = version_info.get('current_version', '')
+            latest_version = version_info.get('latest_version', '')
+            dialog_html = """
+            (function() {
+                const overlay = document.createElement('div');
+                overlay.id = 'update-dialog-overlay';
+                overlay.style.cssText = `position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; display: flex; align-items: center; justify-content: center; font-family: 'Segoe UI', Arial, sans-serif;`;
+                const dialog = document.createElement('div');
+                dialog.id = 'update-dialog';
+                dialog.style.cssText = `background: #23262f; border-radius: 16px; padding: 32px; max-width: 420px; width: 90%; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3); border: 1px solid #444;`;
+                const titleDiv = document.createElement('div');
+                titleDiv.style.cssText = `display: flex; align-items: center; margin-bottom: 16px;`;
+                const iconDiv = document.createElement('div');
+                iconDiv.style.cssText = `width: 48px; height: 48px; background: #2ecc71; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 16px; box-shadow: 0 0 6px #27ae60;`;
+                iconDiv.innerHTML = '<img src="assets/update.png" alt="update" style="width:24px;height:24px;object-fit:contain;filter:brightness(1);">';
+                const title = document.createElement('h3');
+                title.style.cssText = `margin: 0; color: #e5e7eb; font-size: 20px; font-weight: bold;`;
+                title.textContent = 'yt-dlp 更新提醒';
+                titleDiv.appendChild(iconDiv); titleDiv.appendChild(title);
+                const desc = document.createElement('p');
+                desc.style.cssText = `color: #e5e7eb; margin: 0 0 24px 0; line-height: 1.5; font-size: 16px; font-weight: 600;`;
+                desc.textContent = '發現 yt-dlp 新版本！';
+                const versionDiv = document.createElement('div');
+                versionDiv.style.cssText = `background: #181a20; border-radius: 12px; padding: 18px; margin-bottom: 24px; border: 1px solid #444;`;
+                const currentVersionDiv = document.createElement('div');
+                currentVersionDiv.style.cssText = 'margin-bottom: 12px;';
+                currentVersionDiv.innerHTML = `<span style=\"color: #aaa; font-size: 15px;\">目前版本:</span> <span style=\"color: #e5e7eb; font-weight: 500; margin-left: 12px;\">__CURR__</span>`;
+                const latestVersionDiv = document.createElement('div');
+                latestVersionDiv.innerHTML = `<span style=\"color: #aaa; font-size: 15px;\">最新版本:</span> <span style=\"color: #2ecc71; font-weight: 500; margin-left: 12px;\">__LATEST__</span>`;
+                versionDiv.appendChild(currentVersionDiv); versionDiv.appendChild(latestVersionDiv);
+                const question = document.createElement('p');
+                question.style.cssText = `color: #e5e7eb; margin: 16px 0 8px 0; font-size: 15px; font-weight: 600;`;
+                question.textContent = '是否要更新到最新版本？';
+                const actionsRow = document.createElement('div');
+                actionsRow.style.cssText = `display: flex; align-items: center; justify-content: flex-start; gap: 16px; margin: 0 0 8px 0;`;
+                const note = document.createElement('p');
+                note.style.cssText = `color: #888; margin: 0; font-size: 12px; line-height: 1.4; font-style: italic; flex: 1;`;
+                note.textContent = '※yt-dlp為下載器的重要核心元件，建議更新以避免錯誤及獲得更好的使用體驗';
+                const buttonDiv = document.createElement('div');
+                buttonDiv.style.cssText = `display: flex; gap: 16px; justify-content: flex-end; margin: 0 0 24px 0;`;
+                const skipBtn = document.createElement('button');
+                skipBtn.id = 'skip-update-btn';
+                skipBtn.style.cssText = `background: #23262f; color: #e5e7eb; border: 1px solid #444; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; transition: all 0.2s ease;`;
+                skipBtn.textContent = '稍後提醒';
+                skipBtn.onmouseover = function(){ this.style.background = '#2b2e37'; this.style.borderColor = '#2ecc71'; };
+                skipBtn.onmouseout = function(){ this.style.background = '#23262f'; this.style.borderColor = '#444'; };
+                const updateBtn = document.createElement('button');
+                updateBtn.id = 'update-now-btn';
+                updateBtn.style.cssText = `background: #27ae60; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: bold; transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);`;
+                updateBtn.textContent = '立即更新';
+                updateBtn.onmouseover = function(){ this.style.background = '#219150'; this.style.transform = 'scale(1.03)'; this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)'; };
+                updateBtn.onmouseout = function(){ this.style.background = '#27ae60'; this.style.transform = 'scale(1)'; this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.2)'; };
+                buttonDiv.appendChild(skipBtn); buttonDiv.appendChild(updateBtn);
+                actionsRow.appendChild(note);
+                dialog.appendChild(titleDiv); dialog.appendChild(desc); dialog.appendChild(versionDiv); dialog.appendChild(question); dialog.appendChild(actionsRow); dialog.appendChild(buttonDiv);
+                overlay.appendChild(dialog); document.body.appendChild(overlay);
+                updateBtn.addEventListener('click', function(){ overlay.remove(); window.__executeUpdate(); });
+                skipBtn.addEventListener('click', function(){ overlay.remove(); });
+                overlay.addEventListener('click', function(e){ if (e.target === this) { this.remove(); if (window.__onUpdateDialogResult) { window.__onUpdateDialogResult('skip'); } } });
+            })();
+            """
+            dialog_html = dialog_html.replace("__CURR__", str(current_version).replace('\\', '/')).replace("__LATEST__", str(latest_version).replace('\\', '/'))
+            self._eval_js(dialog_html)
+            return "update"
+        except Exception as e:
+            debug_console(f"注入更新對話框失敗: {e}")

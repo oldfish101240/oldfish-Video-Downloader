@@ -116,11 +116,14 @@ class MainWindow(QMainWindow):
     
     def get_version_injection_script(self):
         """獲取版本注入腳本"""
-        from config.constants import APP_VERSION
+        from config.constants import APP_VERSION, APP_VERSION_HOME
         
         return f"""
         (function(){{
             try {{
+                // 將版本號提供給前端存取
+                window.__APP_VERSION = '{APP_VERSION}';
+                window.__APP_VERSION_HOME = '{APP_VERSION_HOME}';
                 var styleId = 'of-version-style';
                 if (!document.getElementById(styleId)) {{
                     var st = document.createElement('style');
@@ -136,7 +139,7 @@ class MainWindow(QMainWindow):
                     var div = document.createElement('div');
                     div.className = 'version-tag';
                     div.id = 'version-tag';
-                    div.textContent = '{APP_VERSION}';
+                    div.textContent = '{APP_VERSION_HOME}';
                     mainEl.appendChild(div);
                 }}
 

@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>oldfish影片下載器</title>
+    <title>oldfish影�?下�???/title>
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <script>
-        // 初始化 Qt WebChannel 並建立與後端的橋接，提供 window.pywebview.api 相容層
+        // ?��???Qt WebChannel 並建立�?後端?��??��??��? window.pywebview.api ?�容�?
         (function(){
             function initChannel(){
                 if (typeof QWebChannel === 'undefined' || !window.qt || !qt.webChannelTransport){
-                    // 若尚未就緒，稍後重試
+                    // ?��??�就緒�?稍�??�試
                     return setTimeout(initChannel, 50);
                 }
                 new QWebChannel(qt.webChannelTransport, function(channel){
@@ -30,7 +30,7 @@
             transition: all 0.25s var(--ease-default);
         }
         
-        /* 基本動畫關鍵幀 */
+        /* ?�本?�畫?�鍵幀 */
         @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -43,25 +43,25 @@
             color: #e5e7eb;
             transition: background 0.3s ease, color 0.3s ease;
         }
-        /* 全域卷軸樣式（Chromium/QtWebEngine） */
+        /* ?��??�軸�??（Chromium/QtWebEngine�?*/
         html, body, .main, .queue-list {
-            scrollbar-width: thin; /* Firefox 後備 */
-            scrollbar-color: #4a4f59 #121418; /* 拇指/軌道：現代灰 */
+            scrollbar-width: thin; /* Firefox 後�? */
+            scrollbar-color: #4a4f59 #121418; /* ?��?/軌�?：現�?�� */
         }
         ::-webkit-scrollbar {
-            width: 8px;  /* 更纖細 */
+            width: 8px;  /* ?��?�?*/
             height: 8px;
         }
         ::-webkit-scrollbar-track {
-            background: #121418; /* 深色軌道 */
+            background: #121418; /* 深色軌�? */
         }
         ::-webkit-scrollbar-thumb {
-            background: #3a3f4a; /* 中性深灰 */
+            background: #3a3f4a; /* 中性深??*/
             border-radius: 6px;
-            border: 2px solid #121418; /* 與軌道留縫，視覺更輕 */
+            border: 2px solid #121418; /* ?��??��?縫�?視覺?��? */
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #4a4f59; /* 略亮的灰色，避免過亮 */
+            background: #4a4f59; /* ?�亮?�灰?��??��??�亮 */
             border-color: #121418;
         }
         ::-webkit-scrollbar-corner {
@@ -102,7 +102,7 @@
         .sidebar .nav-item {
             width: 100%;
             height: 48px;
-            margin-bottom: 6px; /* 標籤間距縮短 */
+            margin-bottom: 6px; /* 標籤?��?縮短 */
             display: flex;
             align-items: center;
             border-radius: 12px;
@@ -161,7 +161,7 @@
             align-items: center;
             justify-content: flex-start;
             position: relative;
-            overflow-y: auto; /* 讓主內容可滾動，配合 sticky 底部區 */
+            overflow-y: auto; /* 讓主?�容?�滾?��??��? sticky 底部?� */
         }
         .title-img {
             margin-top: 60px;
@@ -282,16 +282,16 @@
             display: none;
         }
         .queue-page {
-            /* margin-top: 100px; */ /* 移除此行，由 queue-list 內部控制間距 */
+            /* margin-top: 100px; */ /* 移除此�?，由 queue-list ?�部?�制?��? */
             text-align: center;
             font-size: 22px;
             color: #888;
-            flex: 1; /* 讓佇列頁面佔據剩餘空間 */
-            width: 100%; /* 讓佇列頁面寬度為100% */
-            display: flex; /* 讓其內容可以居中 */
+            flex: 1; /* 讓�??��??��??�剩餘空??*/
+            width: 100%; /* 讓�??��??�寬度為100% */
+            display: flex; /* 讓其?�容?�以居中 */
             flex-direction: column;
             align-items: center;
-            justify-content: space-between; /* 上下分佈，讓底部輸入區靠底 */
+            justify-content: space-between; /* 上�??��?，�?底部輸入?�?��? */
         }
         .modal-bg {
             position: fixed;
@@ -365,7 +365,7 @@
             background: #219150;
         }
         
-        /* 確認對話框按鈕樣式 */
+        /* 確�?對話框�??�樣�?*/
         .modal-buttons {
             display: flex;
             gap: 12px;
@@ -566,14 +566,14 @@
 
 
 
-        /* 淺色主題樣式 */
+        /* 淺色主�?�?? */
         body.light-theme {
             background: #f5f5f5;
             color: #333;
         }
-        /* 淺色主題的卷軸顏色 */
+        /* 淺色主�??�卷軸�???*/
         body.light-theme, body.light-theme .main, body.light-theme .queue-list {
-            scrollbar-color: #b5b8bd #ededed; /* 淺色主題灰 */
+            scrollbar-color: #b5b8bd #ededed; /* 淺色主�???*/
         }
         body.light-theme ::-webkit-scrollbar-track {
             background: #ededed;
@@ -584,7 +584,7 @@
             border-radius: 6px;
         }
         body.light-theme ::-webkit-scrollbar-thumb:hover {
-            background: #b5b8bd; /* 稍深灰 */
+            background: #b5b8bd; /* 稍深??*/
         }
         body.light-theme .container {
             background: #f5f5f5;
@@ -684,7 +684,7 @@
             background: #666;
         }
 
-        /* 新增佇列頁面樣式 */
+        /* ?��?佇�??�面�?? */
         .queue-search-row {
             width: 90%;
             max-width: 600px;
@@ -697,38 +697,38 @@
         }
         
         .queue-list {
-            width: 90%; /* 調整列表寬度 */
-            max-width: 800px; /* 最大寬度限制 */
+            width: 90%; /* 調整?�表寬度 */
+            max-width: 800px; /* ?�大寬度�???*/
             display: flex;
             flex-direction: column;
-            align-items: center; /* 讓列表項居中 */
-            padding-bottom: 110px; /* 下修預留高度，讓列表可視範圍更大 */
+            align-items: center; /* 讓�?表�?居中 */
+            padding-bottom: 110px; /* 下修?��?高度，�??�表?��?範�??�大 */
         }
 
         .queue-bottom {
-            position: sticky; /* 置於主內容底部，不覆蓋左側標籤列 */
+            position: sticky; /* 置於主內容�??��?不�??�左?��?籤�? */
             bottom: 0;
             width: 100%;
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 8px 0 12px; /* 縮小上下高度 */
-            background: #181a20; /* 與頁面一致，避免透出 */
-            z-index: 1200; /* 高於一般內容，低於模態視窗(>10000) */
+            padding: 8px 0 12px; /* 縮�?上�?高度 */
+            background: #181a20; /* ?��??��??��??��??�出 */
+            z-index: 1200; /* 高於一?�內容�?低於模�?視�?(>10000) */
             box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
         }
 
         .queue-item {
-            background: #2b2e37; /* 項目背景色 */
+            background: #2b2e37; /* ?�目?�景??*/
             border-radius: 12px;
             padding: 15px 20px;
-            /* margin-bottom: 20px; */ /* 項目間距由分隔線控制 */
+            /* margin-bottom: 20px; */ /* ?�目?��??��??��??�制 */
             width: 100%;
             display: flex;
-            align-items: flex-start; /* 縮圖和文字頂部對齊 */
+            align-items: flex-start; /* 縮�??��?字�??��?�?*/
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             position: relative;
-            overflow: hidden; /* 防止內容溢出 */
+            overflow: hidden; /* ?�止?�容溢出 */
             transition: all 0.2s ease;
         }
         
@@ -738,21 +738,21 @@
         }
 
         .queue-item-thumbnail {
-            width: 120px; /* 縮圖寬度 */
-            height: 90px; /* 縮圖高度 */
-            object-fit: cover; /* 裁剪圖片以填充 */
+            width: 120px; /* 縮�?寬度 */
+            height: 90px; /* 縮�?高度 */
+            object-fit: cover; /* 裁剪?��?以填??*/
             border-radius: 8px;
             margin-right: 15px;
-            flex-shrink: 0; /* 防止縮圖被壓縮 */
-            background-color: #181a20; /* 縮圖載入前的背景 */
-            display: flex; /* 讓內容居中 */
+            flex-shrink: 0; /* ?�止縮�?被�?�?*/
+            background-color: #181a20; /* 縮�?載入?��??�景 */
+            display: flex; /* 讓內容�?�?*/
             align-items: center;
             justify-content: center;
-            color: #b0b0b0; /* 文字顏色 */
-            font-size: 12px; /* 文字大小 */
+            color: #b0b0b0; /* ?��?顏色 */
+            font-size: 12px; /* ?��?大�? */
             text-align: center;
             line-height: 1.2;
-            padding: 5px; /* 內邊距 */
+            padding: 5px; /* ?��?�?*/
         }
 
         .queue-item-thumbnail img {
@@ -763,10 +763,10 @@
         }
 
         .queue-item-info {
-            flex-grow: 1; /* 資訊部分佔據剩餘空間 */
+            flex-grow: 1; /* 資�??��?佔�??��?空�? */
             display: flex;
             flex-direction: column;
-            justify-content: flex-start; /* 頂部對齊 */
+            justify-content: flex-start; /* ?�部對�? */
         }
 
         .queue-item-title {
@@ -774,7 +774,7 @@
             font-weight: bold;
             color: #e5e7eb;
             margin-bottom: 5px;
-            word-break: break-all; /* 長標題自動換行 */
+            word-break: break-all; /* ?��?題自?��?�?*/
             text-align: left;
         }
 
@@ -807,7 +807,7 @@
 
         .progress-bar {
             height: 100%;
-            width: 0%; /* 初始為0 */
+            width: 0%; /* ?��??? */
             background: #2ecc71;
             border-radius: 5px;
             transition: width 0.3s var(--ease-smooth);
@@ -824,15 +824,15 @@
 
         .queue-separator {
             width: 90%;
-            max-width: 780px; /* 比項目略窄 */
+            max-width: 780px; /* 比�??�略�?*/
             height: 1px;
             background-color: #3a3f4a;
-            margin: 0 auto 8px; /* 縮小與輸入區距離 */
+            margin: 0 auto 8px; /* 縮�??�輸?��?距離 */
         }
         .queue-item-actions {
             display: flex;
             align-items: center;
-            margin-left: auto; /* 將按鈕推到最右邊 */
+            margin-left: auto; /* 將�??�推?��??��? */
         }
         .queue-item-action-btn {
             background: none;
@@ -851,7 +851,7 @@
             filter: brightness(0.85);
         }
         
-        /* 設定頁面樣式 */
+        /* 設�??�面�?? */
         .settings-page {
             width: 100%;
             max-width: 800px;
@@ -903,7 +903,7 @@
         }
         
         .settings-actions {
-            position: fixed; /* 固定在畫面右下角 */
+            position: fixed; /* ?��??�畫?�右下�? */
             right: 32px;
             bottom: 32px;
             display: flex;
@@ -919,14 +919,14 @@
         
         .settings-btn-secondary,
         .settings-btn-primary {
-            padding: 10px 18px; /* 依文字自適應大小 */
+            padding: 10px 18px; /* 依�?字自?��?大�? */
             font-size: 14px;
             font-weight: 600;
             border: none;
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.3s var(--ease-smooth);
-            white-space: nowrap; /* 保持單行 */
+            white-space: nowrap; /* 保�??��? */
         }
         
         .settings-btn-secondary {
@@ -951,7 +951,7 @@
             box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4);
         }
         
-        /* 淺色主題的設定頁面樣式 */
+        /* 淺色主�??�設定�??�樣�?*/
         body.light-theme .settings-container {
             background: #ffffff;
             border-color: #ddd;
@@ -980,87 +980,86 @@
                 <img src="assets/menu.png" alt="menu" style="width:32px;height:32px;">
             </div>
             <div class="nav-item selected" id="nav-home" onclick="showPage('home')">
-                <img src="assets/home.png" alt="主頁">
-                <span class="nav-text">主頁</span>
+                <img src="assets/home.png" alt="主�?">
+                <span class="nav-text">主�?</span>
             </div>
             <div class="nav-item" id="nav-queue" onclick="showPage('queue')">
-                <img src="assets/quene.png" alt="佇列">
-                <span class="nav-text">佇列</span>
+                <img src="assets/quene.png" alt="佇�?">
+                <span class="nav-text">佇�?</span>
             </div>
-            <!-- 將以下兩個按鈕固定在側邊欄底部 -->
+            <!-- 將以下兩?��??�固定在?��?欄�???-->
             <div style="flex:1"></div>
             <div class="nav-item" id="nav-settings" onclick="showPage('settings')">
-                <img src="assets/settings.png" alt="設定">
-                <span class="nav-text">設定</span>
+                <img src="assets/settings.png" alt="設�?">
+                <span class="nav-text">設�?</span>
             </div>
             <div class="nav-item" id="nav-about" onclick="showPage('about')">
-                <img src="assets/about.png" alt="關於">
-                <span class="nav-text">關於</span>
+                <img src="assets/about.png" alt="?�於">
+                <span class="nav-text">?�於</span>
             </div>
         </div>
         <div class="main">
             <img class="title-img" id="title-img" src="assets/icon_text.png" alt="">
             <div class="search-row" id="search-row">
-                <input class="search-input" id="video-url" type="text" placeholder="請輸入影片網址...">
-                <button class="download-btn" onclick="downloadVideo()">下載</button>
+                <input class="search-input" id="video-url" type="text" placeholder="請輸?�影?�網?�...">
+                <button class="download-btn" onclick="downloadVideo()">下�?</button>
             </div>
             
 
-            <!-- 佇列頁面改造 -->
-            <div class="queue-page" id="queue-page"> <!-- 移除 hidden class，改由 JS 完全控制 -->
+            <!-- 佇�??�面?��?-->
+            <div class="queue-page" id="queue-page"> <!-- 移除 hidden class，改??JS 完全?�制 -->
                 <div class="queue-list" id="queue-list">
-                    <!-- 影片任務將會動態新增到這裡 -->
+                    <!-- 影�?任�?將�??��??��??�這裡 -->
                 </div>
                 <div class="queue-bottom">
                     <div class="queue-separator"></div>
-                    <!-- 佇列頁面的輸入框（置底置中） -->
+                    <!-- 佇�??�面?�輸?��?（置底置中�? -->
                     <div class="queue-search-row" id="queue-search-row">
-                        <input class="search-input" id="queue-video-url" type="text" placeholder="請輸入影片網址...">
-                        <button class="download-btn" onclick="downloadVideoFromQueue()">下載</button>
+                        <input class="search-input" id="queue-video-url" type="text" placeholder="請輸?�影?�網?�...">
+                        <button class="download-btn" onclick="downloadVideoFromQueue()">下�?</button>
                     </div>
                 </div>
             </div>
 
-            <!-- 設定頁面 -->
+            <!-- 設�??�面 -->
             <div class="settings-page" id="settings-page" style="display: none;">
                 <div class="settings-container">
-                    <h2 style="margin: 0 0 30px 0; color: #e5e7eb; font-size: 28px;">設定</h2>
+                    <h2 style="margin: 0 0 30px 0; color: #e5e7eb; font-size: 28px;">設�?</h2>
                     
                     <div class="settings-section">
-                        <h3 class="settings-section-title">通知設定</h3>
+                        <h3 class="settings-section-title">?�知設�?</h3>
                         <div class="settings-item">
                             <label class="settings-checkbox-label">
                                 <input type="checkbox" id="enable-notifications" class="settings-checkbox">
-                                <span style="margin-left: 8px;">啟用下載完成通知</span>
+                                <span style="margin-left: 8px;">?�用下�?完�??�知</span>
                             </label>
                         </div>
                     </div>
                     
                     <div class="settings-actions">
-                        <button class="settings-btn-secondary" onclick="resetSettings()">重設為預設值</button>
+                        <button class="settings-btn-secondary" onclick="resetSettings()">?�設?��?設�?/button>
                     </div>
                 </div>
             </div>
 
-            <!-- 關於頁面 -->
+            <!-- ?�於?�面 -->
             <div class="settings-page" id="about-page" style="display: none;">
                 <div class="settings-container" style="position: relative; display:flex; flex-direction:column; align-items:center; padding:40px;">
                     <img src="assets/icon_text.png" alt="logo" style="width:420px; max-width:80%; margin:0 0 16px 0; filter:drop-shadow(0 0 8px #222);">
                     <div style="width:100%; max-width:680px;">
                         <div class="settings-item" style="color:#e5e7eb; font-size:15px; margin-bottom:8px;">
-                            版本：<span id="about-version">—</span>
+                            ?�本�?span id="about-version">??/span>
                         </div>
                         <div class="settings-item" style="color:#e5e7eb; font-size:15px; margin-bottom:8px;">
-                            發布日期：2025.10.20
+                            ?��??��?�?025.10.20
                         </div>
                         <div class="settings-item" style="color:#e5e7eb; font-size:15px; margin-bottom:8px;">
-                            作者：老魚oldfish
-                        </div>
+                            作者�??��?oldfish
                         <div class="settings-item" style="margin:16px 0 0 0;">
-                            <a id="about-github" href="#" style="color:#2ecc71; text-decoration:none;">前往 GitHub 專案</a>
+                            <a id="about-github" href="#" style="color:#2ecc71; text-decoration:none;">?��? GitHub 專�?</a>
                         </div>
                         <div id="about-footer" style="text-align:center; color:#888; font-size:12px; margin-top:24px;">
-                            © 2025 老魚oldfish.
+                            © 2025 ?��?oldfish.
                         </div>
                     </div>
                 </div>
@@ -1068,10 +1067,10 @@
 
         </div>
     </div>
-    <!-- 全局載入中遮罩 -->
+    <!-- ?��?載入中遮�?-->
     <div class="loading-bg" id="loading-bg" style="position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.45); z-index: 15000; display: none;">
         <div style="position:absolute; top:50%; left:50%; transform: translate(-50%,-50%); background:#23262f; color:#e5e7eb; padding:16px 22px; border-radius:12px; box-shadow:0 4px 24px #000a; font-size:16px;">
-            載入中...
+            載入�?..
         </div>
     </div>
     <div class="modal-bg" id="modal-bg">
@@ -1079,25 +1078,25 @@
             <img class="modal-icon" src="assets/icon.png" alt="icon">
             <div class="modal-title" id="modal-title"></div>
             <div class="modal-msg" id="modal-msg"></div>
-            <button class="modal-btn" onclick="closeModal()">確定</button>
+            <button class="modal-btn" onclick="closeModal()">確�?</button>
         </div>
     </div>
     
-    <!-- 確認對話框模態視窗 -->
+    <!-- 確�?對話框模?��?�?-->
     <div class="modal-bg" id="confirm-modal-bg">
         <div class="modal">
             <img class="modal-icon" src="assets/icon.png" alt="icon">
             <div class="modal-title" id="confirm-modal-title"></div>
             <div class="modal-msg" id="confirm-modal-msg"></div>
             <div class="modal-buttons">
-                <button class="modal-btn-secondary" id="confirm-cancel-btn" onclick="closeConfirmModal()">取消</button>
-                <button class="modal-btn-primary" id="confirm-ok-btn" onclick="confirmAction()">確定</button>
+                <button class="modal-btn-secondary" id="confirm-cancel-btn" onclick="closeConfirmModal()">?��?</button>
+                <button class="modal-btn-primary" id="confirm-ok-btn" onclick="confirmAction()">確�?</button>
             </div>
         </div>
     </div>
     <div class="video-modal-bg" id="video-modal-bg">
         <div class="video-modal" id="video-modal">
-            <div class="video-modal-loading" id="video-modal-loading">載入中...</div>
+            <div class="video-modal-loading" id="video-modal-loading">載入�?..</div>
             <div id="video-modal-content" style="display:none;">
                 <div class="video-modal-header">
                     <img class="video-modal-thumb" id="video-modal-thumb" src="assets/icon.png" alt="thumb">
@@ -1108,37 +1107,37 @@
                     </div>
                 </div>
                 <div class="video-modal-options">
-                    <div class="video-modal-label" id="video-modal-quality-label">影片畫質</div>
+                    <div class="video-modal-label" id="video-modal-quality-label">影�??�質</div>
                     <div class="custom-select" id="quality-select">
                         <div class="custom-select-header" onclick="toggleSelect('quality-select')">
-                            <span class="custom-select-text">請選擇畫質</span>
+                            <span class="custom-select-text">請選?�畫�?/span>
                             <div class="custom-select-arrow"></div>
                         </div>
                         <div class="custom-select-options" id="quality-options"></div>
                     </div>
-                    <div class="video-modal-label" style="margin-top:18px;">影片格式</div>
+                    <div class="video-modal-label" style="margin-top:18px;">影�??��?</div>
                     <div class="custom-select" id="format-select">
                         <div class="custom-select-header" onclick="toggleSelect('format-select')">
-                            <span class="custom-select-text">請選擇格式</span>
+                            <span class="custom-select-text">請選?�格�?/span>
                             <div class="custom-select-arrow"></div>
                         </div>
                         <div class="custom-select-options" id="format-options"></div>
                     </div>
                 </div>
                 <div class="video-modal-actions">
-                    <button class="video-modal-btn cancel" onclick="closeVideoModal()">取消</button>
-                    <button class="video-modal-btn" onclick="confirmDownload()">下載</button>
+                    <button class="video-modal-btn cancel" onclick="closeVideoModal()">?��?</button>
+                    <button class="video-modal-btn" onclick="confirmDownload()">下�?</button>
                 </div>
             </div>
         </div>
     </div>
     <script>
-        // 儲存上次獲取的影片資訊以還原畫質選項
+        // ?��?上次?��??�影?��?訊以?��??�質?��?
         let lastVideoInfo = null;
-        // 儲存目前正在處理的影片網址（從主頁或佇列進入）
+        // ?��??��?�?��?��??�影?�網?�（�?主�??��??�進入�?
         let currentUrl = '';
 
-        // MP3, AAC, FLAC, WAV 的音訊品質選項
+        // MP3, AAC, FLAC, WAV ?�音訊�?質選??
         const AUDIO_QUALITIES = [
             {label: "320kbps", value: "320"},
             {label: "256kbps", value: "256"},
@@ -1146,15 +1145,15 @@
             {label: "128kbps", value: "128"}
         ];
 
-        // 儲存所有下載任務的陣列
+        // ?��??�?��?載任?��????
         let downloadQueue = [];
-        let nextTaskId = 0; // 用於給每個任務一個獨特的ID
+        let nextTaskId = 0; // ?�於給�??�任?��??�獨?��?ID
 
         /**
-         * 將影片畫質從高到低排序。
-         * 處理 "4K", "1080p", "720p", "360p", "2K", "4K" 等格式。
-         * @param {Array<Object>} qualities - 畫質物件陣列 {label: string, ratio: string}。
-         * @returns {Array<Object>} 已排序的畫質。
+         * 將影?�畫質�?高到低�?序�?
+         * ?��? "4K", "1080p", "720p", "360p", "2K", "4K" 等格式�?
+         * @param {Array<Object>} qualities - ?�質?�件??? {label: string, ratio: string}??
+         * @returns {Array<Object>} 已�?序�??�質??
          */
         function sortQualities(qualities) {
             return (qualities || []).slice().sort(function(a, b) {
@@ -1169,39 +1168,39 @@
                             return !isNaN(num) ? num : 0;
                         }
                     }
-                    let num = parseInt(s.label); // 用於 "320kbps" 等情況
+                    let num = parseInt(s.label); // ?�於 "320kbps" 等�?�?
                     return !isNaN(num) ? num : 0;
                 }
-                return getNum(b) - getNum(a); // 降序排序
+                return getNum(b) - getNum(a); // ?��??��?
             });
         }
 
         /**
-         * 排序格式，優先考慮 "mp4" 和 "mp3"。
-         * @param {Array<Object>} formats - 格式物件陣列 {value: string, label: string, desc: string}。
-         * @returns {Array<Object>} 已排序的格式。
+         * ?��??��?，優?�考慮 "mp4" ??"mp3"??
+         * @param {Array<Object>} formats - ?��??�件??? {value: string, label: string, desc: string}??
+         * @returns {Array<Object>} 已�?序�??��???
          */
         function sortFormats(formats) {
-            const priority = {"影片+音訊": 3, "影片": 2, "音訊": 1}; // 優先級定義
+            const priority = {"影�?+?��?": 3, "影�?": 2, "?��?": 1}; // ?��?級�?�?
             return (formats || []).slice().sort(function(a, b) {
                 let pa = priority[a.desc] || 0;
                 let pb = priority[b.desc] || 0;
-                if (pa !== pb) return pb - pa; // 按描述優先級降序
-                return a.value.localeCompare(b.value); // 描述相同時按值字母順序
+                if (pa !== pb) return pb - pa; // ?��?述優?��??��?
+                return a.value.localeCompare(b.value); // ?�述?��??��??��?母�?�?
             });
         }
 
         /**
-         * 確認網址是否為有效的 YouTube 網址。
-         * @param {string} url - 要檢查的網址。
-         * @returns {boolean} 是否為有效的 YouTube 網址。
+         * 確�?網�??�否?��??��? YouTube 網�???
+         * @param {string} url - 要檢?��?網�???
+         * @returns {boolean} ?�否?��??��? YouTube 網�???
          */
         function isYoutubeUrl(url) {
             return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//.test(url.trim());
         }
 
         /**
-         * 切換側邊欄的折疊狀態。
+         * ?��??��?欄�??��??�?��?
          */
         function toggleSidebar() {
             var sidebar = document.getElementById('sidebar');
@@ -1210,8 +1209,8 @@
         
 
         /**
-         * 顯示指定頁面並更新導航項目選擇。
-         * @param {string} pageName - 要顯示的頁面名稱 ('home', 'queue', 或 'settings')。
+         * 顯示?��??�面並更?��??��??�選?��?
+         * @param {string} pageName - 要顯示�??�面?�稱 ('home', 'queue', ??'settings')??
          */
         function showPage(pageName) {
             document.getElementById('nav-home').classList.remove('selected');
@@ -1230,11 +1229,11 @@
             if (pageName === 'home') {
                 document.getElementById('nav-home').classList.add('selected');
                 
-                // 顯示主頁元素
+                // 顯示主�??��?
                 if (titleImg) titleImg.style.display = 'block';
                 if (searchRow) searchRow.style.display = 'flex';
                 
-                // 隱藏其他頁面
+                // ?��??��??�面
                 if (queuePage) queuePage.style.display = 'none';
                 if (settingsPage) settingsPage.style.display = 'none';
                 if (aboutPage) aboutPage.style.display = 'none';
@@ -1242,11 +1241,11 @@
             } else if (pageName === 'queue') {
                 document.getElementById('nav-queue').classList.add('selected');
                 
-                // 隱藏主頁元素
+                // ?��?主�??��?
                 if (titleImg) titleImg.style.display = 'none';
                 if (searchRow) searchRow.style.display = 'none';
                 
-                // 顯示佇列頁面
+                // 顯示佇�??�面
                 if (queuePage) queuePage.style.display = 'flex';
                 if (settingsPage) settingsPage.style.display = 'none';
                 if (aboutPage) aboutPage.style.display = 'none';
@@ -1256,40 +1255,40 @@
             } else if (pageName === 'settings') {
                 document.getElementById('nav-settings').classList.add('selected');
                 
-                // 隱藏主頁元素
+                // ?��?主�??��?
                 if (titleImg) titleImg.style.display = 'none';
                 if (searchRow) searchRow.style.display = 'none';
                 
-                // 隱藏佇列頁面，顯示設定頁面
+                // ?��?佇�??�面，顯示設定�???
                 if (queuePage) queuePage.style.display = 'none';
                 if (settingsPage) settingsPage.style.display = 'block';
                 if (aboutPage) aboutPage.style.display = 'none';
                 
-                // 載入設定
+                // 載入設�?
                 loadSettings();
             } else if (pageName === 'about') {
                 var navA = document.getElementById('nav-about');
                 if (navA) navA.classList.add('selected');
-                // 隱藏主頁元素
+                // ?��?主�??��?
                 if (titleImg) titleImg.style.display = 'none';
                 if (searchRow) searchRow.style.display = 'none';
-                // 隱藏其他頁面
+                // ?��??��??�面
                 if (queuePage) queuePage.style.display = 'none';
                 if (settingsPage) settingsPage.style.display = 'none';
                 if (aboutPage) aboutPage.style.display = 'block';
-                // 注入版本號與 GitHub 連結
-                try { document.getElementById('about-version').textContent = (window.__APP_VERSION || '未知'); } catch(e) {}
+                // 注入?�本?��? GitHub ???
+                try { document.getElementById('about-version').textContent = (window.__APP_VERSION || '?�知'); } catch(e) {}
                 try {
                     var link = document.getElementById('about-github');
                     if (link) {
                         link.addEventListener('click', function(ev){
                             ev.preventDefault();
-                            // 使用系統預設瀏覽器開啟
+                            // 使用系統?�設?�覽?��???
                             try { 
                                 window.api.open_external_link('https://github.com/oldfish101240/oldfish-Video-Downloader');
                             } catch(e) {
-                                console.error('無法開啟外部連結:', e);
-                                // 備用方案
+                                console.error('?��??��?外部???:', e);
+                                // ?�用?��?
                                 try { window.open('https://github.com/oldfish101240/oldfish-Video-Downloader', '_blank'); } catch(_) {}
                             }
                         });
@@ -1299,38 +1298,38 @@
         }
 
         /**
-         * 顯示一般訊息模態視窗。
-         * @param {string} title - 訊息標題。
-         * @param {string} message - 訊息內容。
+         * 顯示一?��??�模?��?窗�?
+         * @param {string} title - 訊息標�???
+         * @param {string} message - 訊息?�容??
          */
         function showModal(title, msg) {
             const modal = document.getElementById('modal-bg');
             document.getElementById('modal-title').innerText = title;
             document.getElementById('modal-msg').innerHTML = msg;
             modal.style.display = 'flex';
-            setTimeout(() => modal.classList.add('show'), 10); // 觸發動畫
+            setTimeout(() => modal.classList.add('show'), 10); // 觸發?�畫
         }
 
         /**
-         * 隱藏一般訊息模態視窗。
+         * ?��?一?��??�模?��?窗�?
          */
         function closeModal() {
             const modal = document.getElementById('modal-bg');
             modal.classList.remove('show');
             setTimeout(() => {
                 modal.style.display = 'none';
-            }, 200); // 等待動畫結束
+            }, 200); // 等�??�畫結�?
         }
         
         /**
-         * 顯示確認對話框
+         * 顯示確�?對話�?
          */
         function showConfirmModal(title, message, onConfirm) {
             const modal = document.getElementById('confirm-modal-bg');
             document.getElementById('confirm-modal-title').innerText = title;
             document.getElementById('confirm-modal-msg').innerHTML = message;
             
-            // 存儲確認回調函數
+            // 存儲確�??�調?�數
             window._confirmCallback = onConfirm;
             
             modal.style.display = 'flex';
@@ -1338,7 +1337,7 @@
         }
         
         /**
-         * 關閉確認對話框
+         * ?��?確�?對話�?
          */
         function closeConfirmModal() {
             const modal = document.getElementById('confirm-modal-bg');
@@ -1350,7 +1349,7 @@
         }
         
         /**
-         * 確認操作
+         * 確�??��?
          */
         function confirmAction() {
             if (window._confirmCallback) {
@@ -1360,7 +1359,7 @@
         }
 
         /**
-         * 隱藏影片詳細資訊模態視窗。
+         * ?��?影�?詳細資�?模�?視�???
          */
         function closeVideoModal() {
             const videoModalBg = document.getElementById('video-modal-bg');
@@ -1372,7 +1371,7 @@
         }
 
         /**
-         * 處理佇列輸入框的Enter鍵按下。
+         * ?��?佇�?輸入框�?Enter?��?下�?
          */
         function handleQueueInputKeyPress(event) {
             if (event.key === 'Enter') {
@@ -1381,85 +1380,85 @@
         }
         
         /**
-         * 從佇列頁面下載影片。
+         * 從�??��??��?載影?��?
          */
         function downloadVideoFromQueue() {
             const urlInput = document.getElementById('queue-video-url');
             const url = urlInput.value.trim();
             
             if (!url) {
-                showModal('錯誤', '請輸入影片網址');
+                showModal('?�誤', '請輸?�影?�網?�');
                 return;
             }
             
-            // 與主頁一致：開啟影片資訊模態，讓使用者選擇格式再下載
+            // ?�主?��??��??��?影�?資�?模�?，�?使用?�選?�格式�?下�?
             try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
             showVideoModal(url);
             
-            // 清空輸入框
+            // 清空輸入�?
             urlInput.value = '';
         }
 
         /**
-         * 處理主頁面上的下載按鈕點擊。
-         * 獲取影片資訊並顯示影片詳細資訊模態視窗。
+         * ?��?主�??��??��?載�??��??��?
+         * ?��?影�?資�?並顯示影?�詳細�?訊模?��?窗�?
          */
         async function downloadVideo() {
             var url = document.getElementById('video-url').value;
             if (!url.trim()) {
-                showModal("提醒", "請輸入影片網址！");
+                showModal("?��?", "請輸?�影?�網?��?);
                 return;
             }
             if (!isYoutubeUrl(url)) {
-                showModal("網址格式錯誤", "</div><div style='text-align:left;'><br>正確格式範例：<br>https://www.youtube.com/watch?v=xxxx<br>https://youtu.be/xxxx</div>");
+                showModal("網�??��??�誤", "</div><div style='text-align:left;'><br>�?��?��?範�?�?br>https://www.youtube.com/watch?v=xxxx<br>https://youtu.be/xxxx</div>");
                 return;
             }
-            // 立即顯示載入中，避免前一層阻塞繪製
+            // 立即顯示載入中�??��??��?層阻塞繪�?
             requestAnimationFrame(() => showLoading());
-            // 設置 currentUrl，避免之後確認下載時讀到空字串
+            // 設置 currentUrl，避?��?後確認�?載�?讀?�空字串
             try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
             showVideoModal(url);
         }
 
         /**
-         * 載入設定
+         * 載入設�?
          */
         function loadSettings() {
             if (window.pywebview && window.pywebview.api) {
                 window.pywebview.api.load_settings()
                     .then(settings => {
-                        console.log('設定已載入:', settings);
-                        // 更新 UI
+                        console.log('設�?已�???', settings);
+                        // ?�新 UI
                         const notificationCheckbox = document.getElementById('enable-notifications');
                         if (notificationCheckbox) {
                             notificationCheckbox.checked = settings.enableNotifications !== false;
                         }
                         
-                        // 為設定項目添加自動儲存事件監聽器
+                        // ?�設定�??�添?�自?�儲存�?件監?�器
                         setupAutoSaveListeners();
                     })
                     .catch(error => {
-                        console.error('載入設定失敗:', error);
+                        console.error('載入設�?失�?:', error);
                     });
             }
         }
         
         /**
-         * 設置自動儲存事件監聽器
+         * 設置?��??��?事件??��??
          */
         function setupAutoSaveListeners() {
-            // 為通知設定添加變更監聽器
+            // ?�通知設�?添�?變更??��??
             const notificationCheckbox = document.getElementById('enable-notifications');
             if (notificationCheckbox) {
                 notificationCheckbox.addEventListener('change', function() {
-                    console.log('通知設定已變更，自動儲存中...');
-                    saveSettings(true); // 靜默儲存
+                    console.log('?�知設�?已�??��??��??��?�?..');
+                    saveSettings(true); // ?��??��?
                 });
             }
         }
         
         /**
-         * 儲存設定（靜默模式，不顯示成功訊息）
+         * ?��?設�?（�?默模式�?不顯示�??��??��?
          */
         function saveSettings(silent = false) {
             const notificationCheckbox = document.getElementById('enable-notifications');
@@ -1471,44 +1470,44 @@
             if (window.pywebview && window.pywebview.api) {
                 window.pywebview.api.save_settings(settings)
                     .then(() => {
-                        console.log('設定已儲存');
+                        console.log('設�?已儲�?);
                         if (!silent) {
-                            showModal('成功', '設定已儲存');
+                            showModal('?��?', '設�?已儲�?);
                         }
                     })
                     .catch(error => {
-                        console.error('儲存設定失敗:', error);
+                        console.error('?��?設�?失�?:', error);
                         if (!silent) {
-                            showModal('錯誤', '儲存設定失敗');
+                            showModal('?�誤', '?��?設�?失�?');
                         }
                     });
             }
         }
         
         /**
-         * 重設為預設值
+         * ?�設?��?設�?
          */
         function resetSettings() {
             showConfirmModal(
-                '重設設定', 
-                '確定要重設所有設定為預設值嗎？', 
+                '?�設設�?', 
+                '確�?要�?設�??�設定為?�設?��?�?, 
                 function() {
                     if (window.pywebview && window.pywebview.api) {
                         window.pywebview.api.reset_to_defaults()
                             .then(settings => {
-                                console.log('設定已重設:', settings);
-                                // 更新 UI
+                                console.log('設�?已�?�?', settings);
+                                // ?�新 UI
                                 const notificationCheckbox = document.getElementById('enable-notifications');
                                 if (notificationCheckbox) {
                                     notificationCheckbox.checked = settings.enableNotifications !== false;
                                 }
-                                // 自動儲存重設後的設定
-                                saveSettings(true); // 靜默儲存
-                                showModal('成功', '設定已重設為預設值');
+                                // ?��??��??�設後�?設�?
+                                saveSettings(true); // ?��??��?
+                                showModal('?��?', '設�?已�?設為?�設??);
                             })
                             .catch(error => {
-                                console.error('重設設定失敗:', error);
-                                showModal('錯誤', '重設設定失敗');
+                                console.error('?�設設�?失�?:', error);
+                                showModal('?�誤', '?�設設�?失�?');
                             });
                     }
                 }
@@ -1525,30 +1524,30 @@
         }
 
         /**
-         * 顯示影片詳細資訊模態視窗。
-         * @param {string} url - 影片網址。
+         * 顯示影�?詳細資�?模�?視�???
+         * @param {string} url - 影�?網�???
          */
         function showVideoModal(url) {
-            // 記錄目前處理的網址供確認下載使用
+            // 記�??��??��??�網?�供確認�?載使??
             try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
             const videoModalBg = document.getElementById('video-modal-bg');
             videoModalBg.style.display = 'flex';
             setTimeout(() => videoModalBg.classList.add('show'), 10);
             document.getElementById('video-modal-loading').style.display = '';
             document.getElementById('video-modal-content').style.display = 'none';
-            // 使用 requestAnimationFrame 確保樣式更新後再顯示，避免同步阻塞不重繪
+            // 使用 requestAnimationFrame 確�?�???�新後�?顯示，避?��?步阻塞�??�繪
             requestAnimationFrame(() => showLoading());
-            // 背景取得影片資訊，前端以回呼接收，避免阻塞
+            // ?�景?��?影�?資�?，�?端以?�呼?�收，避?�阻�?
             setTimeout(function(){
                 window.__onVideoInfo = function(info) {
                     try { lastVideoInfo = info; } catch(e) {}
 
-                    // 畫質選項（由高到低排序）
+                    // ?�質?��?（由高到低�?序�?
                     var qualityOptions = document.getElementById('quality-options');
                     qualityOptions.innerHTML = '';
                     var qualities = (info.qualities || []).slice();
                     qualities.sort(function(a, b) {
-                        // 解析 label 內的數字（如 4K, 1080p, 720p, 480p, 360p）
+                        // �?? label ?��??��?（�? 4K, 1080p, 720p, 480p, 360p�?
                         function getValue(q) {
                             if (q.label.endsWith('K')) return parseInt(q.label) * 1000;
                             var m = q.label.match(/(\d+)p/);
@@ -1559,7 +1558,7 @@
                     qualities.forEach(function(q) {
                         var optionDiv = document.createElement('div');
                         optionDiv.className = 'custom-select-option';
-                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示畫面比例
+                        optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : ''); // 顯示?�面比�?
                         optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
                         if (q.label === '1080p') {
                             optionDiv.classList.add('selected');
@@ -1572,12 +1571,12 @@
                         qualityOptions.appendChild(optionDiv);
                     });
 
-                    // 格式選項（mp4和mp3優先）
+                    // ?��??��?（mp4?�mp3?��?�?
                     var formatOptions = document.getElementById('format-options');
                     formatOptions.innerHTML = '';
                     var formats = (info.formats || []).slice();
                     formats.sort(function(a, b) {
-                        var priority = {"影片+音訊": 3, "影片": 2, "音訊": 1};
+                        var priority = {"影�?+?��?": 3, "影�?": 2, "?��?": 1};
                         var pa = priority[a.desc] || 0;
                         var pb = priority[b.desc] || 0;
                         if (pa !== pb) return pb - pa;
@@ -1599,7 +1598,7 @@
                         formatOptions.appendChild(optionDiv);
                     });
 
-                    // 設定預設值
+                    // 設�??�設??
                     if (!currentQuality && qualities.length > 0) {
                         currentQuality = qualities[0].label;
                         const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
@@ -1615,12 +1614,12 @@
                         }
                     }
 
-                    // 縮圖處理：如果 info.thumb 不存在或載入失敗，顯示文字
+                    // 縮�??��?：�???info.thumb 不�??��?載入失�?，顯示�?�?
                     const thumbElement = document.getElementById('video-modal-thumb');
                     if (info.thumb) {
                         thumbElement.src = info.thumb;
                         thumbElement.style.display = '';
-                        thumbElement.alt = "影片縮圖";
+                        thumbElement.alt = "影�?縮�?";
                         const existingNoThumbText = thumbElement.parentNode.querySelector('.video-modal-thumb-text');
                         if (existingNoThumbText) { existingNoThumbText.remove(); }
                     } else {
@@ -1630,7 +1629,7 @@
                         if (!noThumbText) {
                             noThumbText = document.createElement('div');
                             noThumbText.classList.add('video-modal-thumb-text');
-                            noThumbText.innerText = "找不到縮圖";
+                            noThumbText.innerText = "?��??�縮??;
                             noThumbText.style.width = '100%';
                             noThumbText.style.height = '100%';
                             noThumbText.style.display = 'flex';
@@ -1656,8 +1655,8 @@
                     hideLoading();
                 };
                 window.__onVideoInfoError = function(error) {
-                    console.error('獲取影片資訊時出錯:', error);
-                    showModal('錯誤', '找不到影片，請確認網址是否輸入正確');
+                    console.error('?��?影�?資�??�出??', error);
+                    showModal('?�誤', '?��??�影?��?請確認網?�?�否輸入�?��');
                     closeVideoModal();
                     hideLoading();
                 };
@@ -1665,14 +1664,14 @@
             }, 0);
         }
 
-        // 自定義下拉選單相關變數
+        // ?��?義�??�選?�相?��???
         let currentQuality = '';
         let currentFormat = '';
         let isQualitySelectOpen = false;
         let isFormatSelectOpen = false;
 
         /**
-         * 切換下拉選單的開關狀態
+         * ?��?下�??�單?��??��???
          */
         function toggleSelect(selectId) {
             const select = document.getElementById(selectId);
@@ -1683,7 +1682,7 @@
             
             if (!options || !header) return;
             
-            // 關閉其他下拉選單
+            // ?��??��?下�??�單
             if (selectId === 'quality-select') {
                 closeSelect('format-select');
                 closeSelect('theme-select');
@@ -1721,7 +1720,7 @@
         }
 
         /**
-         * 關閉指定的下拉選單
+         * ?��??��??��??�選??
          */
         function closeSelect(selectId) {
             const select = document.getElementById(selectId);
@@ -1743,17 +1742,17 @@
         }
 
         /**
-         * 選擇下拉選單選項
+         * ?��?下�??�單?��?
          */
         function selectOption(selectId, value, text) {
             const select = document.getElementById(selectId);
             const headerText = select.querySelector('.custom-select-text');
             const options = select.querySelectorAll('.custom-select-option');
             
-            // 移除所有選項的選中狀態
+            // 移除?�?�選?��??�中?�??
             options.forEach(option => option.classList.remove('selected'));
             
-            // 為當前選擇的選項添加選中狀態
+            // ?�當?�選?��??��?添�??�中?�??
             const selectedOption = Array.from(options).find(option => 
                 option.textContent === text
             );
@@ -1774,8 +1773,8 @@
         }
 
         /**
-         * 處理影片格式選擇的變更。
-         * 根據選擇的影片或音訊格式調整畫質選項。
+         * ?��?影�??��??��??��??��?
+         * ?��??��??�影?��??��??��?調整?�質?��???
          */
         function onFormatChange() {{
             const qualityOptions = document.getElementById('quality-options');
@@ -1783,27 +1782,27 @@
             const audioTypes = ["mp3", "aac", "flac", "wav"];
 
             if (audioTypes.includes(currentFormat)) {{
-                // 如果是音訊格式，顯示音訊品質
+                // 如�??�音訊格式�?顯示?��??�質
                 qualityOptions.innerHTML = '';
                 AUDIO_QUALITIES.forEach(q => {{
                     const optionDiv = document.createElement('div');
                     optionDiv.className = 'custom-select-option';
                     optionDiv.textContent = q.label;
                     optionDiv.onclick = () => selectOption('quality-select', q.value, q.label);
-                    // 設定預設選中320kbps
+                    // 設�??�設?�中320kbps
                     if (q.value === "320") {{
                         optionDiv.classList.add('selected');
                     }}
                     qualityOptions.appendChild(optionDiv);
                 }});
-                currentQuality = "320"; // 預設音訊品質
+                currentQuality = "320"; // ?�設?��??�質
                 const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
                 if (qualitySelectText) {{
                     qualitySelectText.textContent = "320kbps";
                 }}
-                qualityLabel.innerText = "音質";
+                qualityLabel.innerText = "?�質";
             }} else {{
-                // 如果是影片格式，從 lastVideoInfo 還原影片畫質
+                // 如�??�影?�格式�?�?lastVideoInfo ?��?影�??�質
                 if (lastVideoInfo && lastVideoInfo.qualities) {{
                     qualityOptions.innerHTML = '';
                     let sortedQualities = sortQualities(lastVideoInfo.qualities);
@@ -1813,7 +1812,7 @@
                         optionDiv.className = 'custom-select-option';
                         optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
                         optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
-                        // 設定預設選中1080p，如果沒有1080p則選第一個
+                        // 設�??�設?�中1080p，�??��???080p?�選第�???
                         if (q.label === "1080p" || (!defaultSet && sortedQualities.indexOf(q) === 0)) {{
                             optionDiv.classList.add('selected');
                             currentQuality = q.label;
@@ -1826,16 +1825,16 @@
                         qualityOptions.appendChild(optionDiv);
                     }});
                 }}
-                qualityLabel.innerText = "影片畫質";
+                qualityLabel.innerText = "影�??�質";
             }}
         }}
 
         /**
-         * 確認並開始影片下載。
-         * 使用選定的選項呼叫 Python API。
+         * 確�?並�?始影?��?載�?
+         * 使用?��??�選?�呼??Python API??
          */
         async function confirmDownload() {{
-            // 優先使用 showVideoModal 記錄的 currentUrl；若空才讀主頁輸入框
+            // ?��?使用 showVideoModal 記�???currentUrl；若空�?讀主�?輸入�?
             let url = (currentUrl || '').trim();
             if (!url) {{
             const urlInput = document.getElementById('video-url');
@@ -1844,78 +1843,78 @@
             const quality = currentQuality;
             const format = currentFormat;
 
-            closeVideoModal(); // 關閉影片選擇模態視窗
+            closeVideoModal(); // ?��?影�??��?模�?視�?
 
-            // 將任務加入佇列並渲染
+            // 將任?��??��??�並渲�?
             addDownloadTask({
-                id: nextTaskId++, // 給予唯一ID
+                id: nextTaskId++, // 給�??��?ID
                 url: url,
-                title: lastVideoInfo.title || '未知影片',
-                thumbnail: lastVideoInfo.thumb || '', // 縮圖找不到時傳空字串
-                uploader: lastVideoInfo.uploader || '未知作者',
+                title: lastVideoInfo.title || '?�知影�?',
+                thumbnail: lastVideoInfo.thumb || '', // 縮�??��??��??�空字串
+                uploader: lastVideoInfo.uploader || '?�知作�?,
                 duration: lastVideoInfo.duration || '00:00',
                 quality: quality,
                 format: format,
-                progress: 0, // 初始進度
-                status: '等待中', // 初始狀態
-                filePath: '' // 新增檔案路徑，下載完成後會更新
+                progress: 0, // ?��??�度
+                status: '等�?�?, // ?��??�??
+                filePath: '' // ?��?檔�?路�?，�?載�??��??�更??
             });
 
-            // 清理輸入狀態
+            // 清�?輸入?�??
             try {{ const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; }} catch(e) {{}}
             currentUrl = '';
 
-            // 呼叫 Python API 開始下載 (排到下一個事件迴圈，讓 UI 先切頁)
+            // ?�叫 Python API ?��?下�? (?�到下�??��?件迴?��?�?UI ?��???
             setTimeout(() => {{
                 try {{
                     const task = downloadQueue[downloadQueue.length - 1];
                     window.pywebview.api.start_download(task.id, url, quality, format)
-                        .then(result => {{ console.log("下載任務啟動結果:", result); }})
-                        .catch(error => {{ console.error("啟動下載任務時出錯:", error); }});
+                        .then(result => {{ console.log("下�?任�??��?結�?:", result); }})
+                        .catch(error => {{ console.error("?��?下�?任�??�出??", error); }});
                 }} catch (e) {{
-                    console.error("排程下載任務時出錯:", e);
+                    console.error("?��?下�?任�??�出??", e);
                 }}
             }}, 0);
         }}
 
         /**
-         * 將一個下載任務添加到佇列並更新顯示。
-         * @param {{Object}} task - 下載任務物件。
+         * 將�??��?載任?�添?�到佇�?並更?�顯示�?
+         * @param {{Object}} task - 下�?任�??�件??
          */
         function addDownloadTask(task) {{
             downloadQueue.push(task);
-            renderQueue(); // 重新渲染整個佇列
-            // 如果在主頁添加任務，切換到佇列頁面
+            renderQueue(); // ?�新渲�??�個�???
+            // 如�??�主?�添?�任?��??��??��??��???
             showPage('queue');
         }}
 
         /**
-         * 渲染或更新下載佇列的顯示。
+         * 渲�??�更?��?載�??��?顯示??
          */
         function renderQueue() {{
             const queueList = document.getElementById('queue-list');
-            queueList.innerHTML = ''; // 清空現有內容以重新渲染
+            queueList.innerHTML = ''; // 清空?��??�容以�??�渲??
 
             if (downloadQueue.length === 0) {{
-                queueList.innerHTML = `<p style="text-align: center; color: #888; font-size: 18px; margin-top: 50px;">目前沒有下載任務。</p>`;
+                queueList.innerHTML = `<p style="text-align: center; color: #888; font-size: 18px; margin-top: 50px;">?��?沒�?下�?任�???/p>`;
                 return;
             }}
 
             downloadQueue.forEach((task, index) => {{
-                // 創建任務項目
+                // ?�建任�??�目
                 const itemDiv = document.createElement('div');
                 itemDiv.classList.add('queue-item');
-                itemDiv.setAttribute('data-task-id', task.id); // 便於後續更新特定任務
+                itemDiv.setAttribute('data-task-id', task.id); // 便於後�??�新?��?任�?
 
-                // 處理長網址顯示
+                // ?��??�網?�顯示
                 const displayUrl = task.url.length > 50 ? task.url.substring(0, 47) + '...' : task.url;
 
                 let thumbnailContent;
                 if (task.thumbnail) {{
                     const escThumb = String(task.thumbnail).replace(/\"/g, '&quot;');
-                    thumbnailContent = `<img class=\"queue-item-thumbnail-image\" src=\"${escThumb}\" alt=\"影片縮圖\" onerror=\"this.style.display='none';this.parentNode.innerHTML='<div class=\\'queue-item-thumbnail-text\\'>找不到縮圖</div>'\">`;
+                    thumbnailContent = `<img class=\"queue-item-thumbnail-image\" src=\"${escThumb}\" alt=\"影�?縮�?\" onerror=\"this.style.display='none';this.parentNode.innerHTML='<div class=\\'queue-item-thumbnail-text\\'>?��??�縮??/div>'\">`;
                 }} else {{
-                    thumbnailContent = `<div class=\"queue-item-thumbnail-text\">找不到縮圖</div>`;
+                    thumbnailContent = `<div class=\"queue-item-thumbnail-text\">?��??�縮??/div>`;
                 }}
 
                 itemDiv.innerHTML = `
@@ -1937,13 +1936,13 @@
                     </div>
                     <div class="queue-item-actions">
                         <button class="queue-item-action-btn" onclick="openFileLocation(${task.id})" disabled>
-                            <img src="assets/folder.png" alt="開啟檔案位置">
+                            <img src="assets/folder.png" alt="?��?檔�?位置">
                         </button>
                     </div>
                 `;
                 queueList.appendChild(itemDiv);
 
-                // 如果不是最後一個項目，添加分隔線
+                // 如�?不是?�後�??��??��?添�??��?�?
                 if (index < downloadQueue.length - 1) {{
                     const separatorDiv = document.createElement('div');
                     separatorDiv.classList.add('queue-separator');
@@ -1952,33 +1951,33 @@
             }});
         }}
 
-        // **重要：新增一個函數來更新特定任務的進度**
-        // 這個函數將由 Python 後端呼叫（透過 pywebview.api.update_progress）
-        window.updateDownloadProgress = function(taskId, progress, status = '下載中', message = '', filePath = '') {{
+        // **?��?：新增�??�函?��??�新?��?任�??�進度**
+        // ?�個函?��???Python 後端?�叫（透�? pywebview.api.update_progress�?
+        window.updateDownloadProgress = function(taskId, progress, status = '下�?�?, message = '', filePath = '') {{
             const taskIndex = downloadQueue.findIndex(task => task.id === taskId);
             if (taskIndex !== -1) {{
                 downloadQueue[taskIndex].progress = progress;
                 downloadQueue[taskIndex].status = status;
                 if (filePath) {{
-                    downloadQueue[taskIndex].filePath = filePath; // 更新檔案路徑
+                    downloadQueue[taskIndex].filePath = filePath; // ?�新檔�?路�?
                 }}
-                // 如果有額外訊息，可以顯示
+                // 如�??��?外�??��??�以顯示
                 if (message) {{
                     console.log(`Task ${taskId} update: ${message}`);
                 }}
-                // 找到對應的 DOM 元素並更新
+                // ?�到對�???DOM ?��?並更??
                 const itemDiv = document.querySelector(`.queue-item[data-task-id="${taskId}"]`);
                 if (itemDiv) {{
                     itemDiv.querySelector('.progress-bar').style.width = `${progress}%`;
                     itemDiv.querySelector('.progress-text').innerText = `${status} (${progress.toFixed(1)}%)`;
-                    // 只有當狀態為「已完成」且有 filePath 時才啟用按鈕
+                    // ?��??��??�為?�已完�??��???filePath ?��??�用?��?
                     const openFolderBtn = itemDiv.querySelector('.queue-item-action-btn');
-                    if (status === '已完成' && downloadQueue[taskIndex].filePath) {{ // 檢查 task.filePath
-                        openFolderBtn.disabled = false; // 啟用按鈕
+                    if (status === '已�??? && downloadQueue[taskIndex].filePath) {{ // 檢查 task.filePath
+                        openFolderBtn.disabled = false; // ?�用?��?
                         openFolderBtn.style.opacity = '1';
                         openFolderBtn.style.cursor = 'pointer';
                     }} else {{
-                        openFolderBtn.disabled = true; // 禁用按鈕
+                        openFolderBtn.disabled = true; // 禁用?��?
                         openFolderBtn.style.opacity = '0.5'; // 變灰
                         openFolderBtn.style.cursor = 'not-allowed';
                     }}
@@ -1987,31 +1986,31 @@
         }};
 
         /**
-         * 開啟下載檔案所在位置。
-         * @param {{number}} taskId - 任務ID。
+         * ?��?下�?檔�??�?��?置�?
+         * @param {{number}} taskId - 任�?ID??
          */
         function openFileLocation(taskId) {{
             const task = downloadQueue.find(t => t.id === taskId);
             if (!task) {{
-                console.error("找不到任務:", taskId);
-                showModal("錯誤", "找不到指定的下載任務。");
+                console.error("?��??�任??", taskId);
+                showModal("?�誤", "?��??��?定�?下�?任�???);
                 return;
             }}
             
             if (!task.filePath) {{
-                console.error("任務沒有檔案路徑:", task);
-                showModal("錯誤", "檔案路徑不可用。");
+                console.error("任�?沒�?檔�?路�?:", task);
+                showModal("?�誤", "檔�?路�?不可?��?);
                 return;
             }}
             
-            // 傳遞實際的檔案路徑給後端
+            // ?��?實�??��?案路徑給後端
             window.pywebview.api.open_file_location(task.filePath)
                 .then(result => {{
-                    console.log("開啟檔案位置結果:", result);
+                    console.log("?��?檔�?位置結�?:", result);
                 }})
                 .catch(error => {{
-                    console.error("開啟檔案位置時出錯:", error);
-                    showModal("錯誤", "無法開啟檔案位置。");
+                    console.error("?��?檔�?位置?�出??", error);
+                    showModal("?�誤", "?��??��?檔�?位置??);
                 }});
         }}
 
@@ -2019,12 +2018,12 @@
 
 
 
-        // 點擊外部關閉下拉選單
+        // 點�?外部?��?下�??�單
         document.addEventListener('click', function(event) {{
             const qualitySelect = document.getElementById('quality-select');
             const formatSelect = document.getElementById('format-select');
             
-            // 只有在影片選擇模態視窗才處理畫質和格式選擇的關閉
+            // ?��??�影?�選?�模?��?窗�??��??�質?�格式選?��??��?
             const videoModal = document.getElementById('video-modal-bg');
             if (videoModal && videoModal.classList.contains('show')) {{
                 if (qualitySelect && !qualitySelect.contains(event.target)) {{
@@ -2036,7 +2035,7 @@
             }}
         }});
 
-        // 首次載入時，綁定Enter事件並顯示主頁
+        // 首次載入?��?綁�?Enter事件並顯示主??
         document.addEventListener('DOMContentLoaded', () => {{
             const homeInput = document.getElementById('video-url');
             if (homeInput) {{
