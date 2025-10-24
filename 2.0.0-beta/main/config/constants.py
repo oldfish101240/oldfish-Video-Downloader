@@ -22,8 +22,7 @@ AUDIO_QUALITIES = [
 DEFAULT_SETTINGS = {
     'enableNotifications': True,
     'addResolutionToFilename': False,
-    # 下載目錄，預設為應用根目錄下的 downloads
-    'downloadDir': 'downloads'
+    'customDownloadPath': ''
 }
 
 # 視窗設定

@@ -240,7 +240,7 @@ class Api(QObject):
             # 使用原生對話框
             options = QFileDialog.Options()
             # 注意：PySide6 預設會用 native dialog，這裡保持預設即可
-            directory = QFileDialog.getExistingDirectory(None, '選擇資料夾', self.settings_manager.get('downloadDir', self.root_dir), QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+            directory = QFileDialog.getExistingDirectory(None, '選擇資料夾', self.root_dir, QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
             if directory:
                 return directory
             return ''
@@ -281,18 +281,25 @@ class Api(QObject):
                 m = re.search(r"(\d+)", q)
                 normalized_quality = m.group(1) if m else '320'
 
-            # 固定使用預設下載目錄（取消自訂下載位置）
-            resolved_download_dir = os.path.join(self.root_dir, 'downloads')
+            # 讀取設定中的下載路徑和解析度檔名選項
+            settings = self.settings_manager.load_settings()
+            custom_path = settings.get('customDownloadPath', '')
+            add_resolution = settings.get('addResolutionToFilename', False)
+            
+            # 決定下載目錄
+            if custom_path and os.path.exists(custom_path):
+                resolved_download_dir = custom_path
+                info_console(f"使用自訂下載路徑: {resolved_download_dir}")
+            else:
+                resolved_download_dir = os.path.join(self.root_dir, 'downloads')
+                info_console(f"使用預設下載路徑: {resolved_download_dir}")
+            
             try:
                 os.makedirs(resolved_download_dir, exist_ok=True)
             except Exception as e:
                 error_console(f"創建下載資料夾失敗，改用預設: {e}")
                 resolved_download_dir = os.path.join(self.root_dir, 'downloads')
                 os.makedirs(resolved_download_dir, exist_ok=True)
-
-            # 讀取設定中的解析度檔名選項
-            settings = self.settings_manager.load_settings()
-            add_resolution = settings.get('addResolutionToFilename', False)
 
             self.downloader.start_download(task_id, url, normalized_quality, normalized_format, 
                                          downloads_dir=resolved_download_dir, 

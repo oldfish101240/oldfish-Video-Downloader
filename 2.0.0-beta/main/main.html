@@ -823,8 +823,8 @@
         }
 
         .queue-separator {
-            width: 90%;
-            max-width: 780px; /* 比項目略窄 */
+            width: 95%;
+            max-width: 800px; /* 加長分隔線 */
             height: 1px;
             background-color: #3a3f4a;
             margin: 0 auto 8px; /* 縮小與輸入區距離 */
@@ -855,16 +855,21 @@
         .settings-page {
             width: 100%;
             max-width: 800px;
-            margin: 60px auto;
+            margin: 20px auto;
             padding: 0 20px;
+            position: relative;
+            overflow-x: hidden; /* 防止水平捲軸 */
         }
         
         .settings-container {
             background: #23262f;
             border-radius: 16px;
             padding: 40px;
+            padding-bottom: 20px; /* 減少底部間距 */
             box-shadow: 0 8px 32px rgba(0,0,0,0.3);
             border: 1px solid #333;
+            position: relative;
+            overflow-x: hidden; /* 防止水平捲軸 */
         }
         
         .settings-section {
@@ -902,19 +907,76 @@
             margin-right: 8px;
         }
         
+        .settings-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #444;
+            border-radius: 8px;
+            background: #1a1d23;
+            color: #e5e7eb;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+        
+        .settings-input:focus {
+            outline: none;
+            border-color: #2ecc71;
+        }
+        
+        .settings-input:read-only {
+            cursor: pointer;
+        }
+        
+        .settings-bottom {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #23262f;
+            border-top: 1px solid #3a3f4a;
+            padding: 20px 40px;
+            border-radius: 0 0 16px 16px;
+        }
+        
+        .settings-separator {
+            display: none; /* 隱藏分隔線，因為已經有邊框 */
+        }
+        
         .settings-actions {
-            position: fixed; /* 固定在畫面右下角 */
-            right: 32px;
-            bottom: 32px;
             display: flex;
             justify-content: flex-end;
             align-items: center;
             gap: 12px;
             margin: 0;
             padding: 0;
-            border-top: none;
             background: transparent;
-            z-index: 1200;
+        }
+        
+        /* 設定頁面固定底部操作區 - 完全複製佇列頁面樣式 */
+        .settings-fixed-bottom {
+            position: sticky; /* 置於主內容底部，不覆蓋左側標籤列 */
+            bottom: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 4px 0 6px; /* 進一步縮小上下高度 */
+            background: #181a20; /* 與頁面一致，避免透出 */
+            z-index: 1200; /* 高於一般內容，低於模態視窗(>10000) */
+            box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
+            margin-left: 0; /* 確保不與左側邊欄重疊 */
+        }
+        
+        .settings-fixed-content {
+            width: 100%;
+            max-width: 800px;
+            margin-top: 4px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end; /* 按鈕右對齊 */
+            gap: 10px;
+            padding-right: 20px; /* 與右邊緣保持距離 */
         }
         
         .settings-btn-secondary,
@@ -1043,9 +1105,28 @@
                                 <span style="margin-left: 8px;">在檔名後方加上影片格式</span>
                             </label>
                         </div>
+                        <div class="settings-item">
+                            <label class="settings-label" style="display: block; margin-bottom: 8px; color: #e5e7eb; font-size: 16px;">
+                                下載路徑：
+                            </label>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <input type="text" id="custom-download-path" class="settings-input" 
+                                       placeholder="請選擇下載路徑" readonly
+                                       style="flex: 1; padding: 10px 12px; border: 1px solid #444; border-radius: 8px; background: #1a1d23; color: #e5e7eb; font-size: 14px;">
+                                <button type="button" id="browse-download-path" class="settings-btn-secondary" 
+                                        style="padding: 10px 16px; white-space: nowrap;">
+                                    瀏覽
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="settings-actions">
+                </div>
+                
+                <!-- 設定頁面固定底部操作區 -->
+                <div class="settings-fixed-bottom" id="settings-fixed-bottom" style="display: none;">
+                    <div class="queue-separator"></div>
+                    <div class="settings-fixed-content">
                         <button class="settings-btn-secondary" onclick="resetSettings()">重設為預設值</button>
                     </div>
                 </div>
@@ -1248,6 +1329,10 @@
                 if (settingsPage) settingsPage.style.display = 'none';
                 if (aboutPage) aboutPage.style.display = 'none';
                 
+                // 隱藏設定頁面固定底部操作區
+                const settingsFixedBottom = document.getElementById('settings-fixed-bottom');
+                if (settingsFixedBottom) settingsFixedBottom.style.display = 'none';
+                
             } else if (pageName === 'queue') {
                 document.getElementById('nav-queue').classList.add('selected');
                 
@@ -1259,6 +1344,10 @@
                 if (queuePage) queuePage.style.display = 'flex';
                 if (settingsPage) settingsPage.style.display = 'none';
                 if (aboutPage) aboutPage.style.display = 'none';
+                
+                // 隱藏設定頁面固定底部操作區
+                const settingsFixedBottom = document.getElementById('settings-fixed-bottom');
+                if (settingsFixedBottom) settingsFixedBottom.style.display = 'none';
                 
                 renderQueue();
                 
@@ -1274,6 +1363,10 @@
                 if (settingsPage) settingsPage.style.display = 'block';
                 if (aboutPage) aboutPage.style.display = 'none';
                 
+                // 顯示設定頁面固定底部操作區
+                const settingsFixedBottom = document.getElementById('settings-fixed-bottom');
+                if (settingsFixedBottom) settingsFixedBottom.style.display = 'block';
+                
                 // 載入設定
                 loadSettings();
             } else if (pageName === 'about') {
@@ -1286,6 +1379,10 @@
                 if (queuePage) queuePage.style.display = 'none';
                 if (settingsPage) settingsPage.style.display = 'none';
                 if (aboutPage) aboutPage.style.display = 'block';
+                
+                // 隱藏設定頁面固定底部操作區
+                const settingsFixedBottom = document.getElementById('settings-fixed-bottom');
+                if (settingsFixedBottom) settingsFixedBottom.style.display = 'none';
                 // 注入版本號與 GitHub 連結
                 try { document.getElementById('about-version').textContent = (window.__APP_VERSION || '未知'); } catch(e) {}
                 try {
@@ -1449,6 +1546,11 @@
                             resolutionCheckbox.checked = settings.addResolutionToFilename === true;
                         }
                         
+                        const downloadPathInput = document.getElementById('custom-download-path');
+                        if (downloadPathInput) {
+                            downloadPathInput.value = settings.customDownloadPath || '';
+                        }
+                        
                         // 為設定項目添加自動儲存事件監聽器
                         setupAutoSaveListeners();
                     })
@@ -1479,6 +1581,35 @@
                     saveSettings(true); // 靜默儲存
                 });
             }
+            
+            // 為下載路徑設定添加變更監聽器
+            const downloadPathInput = document.getElementById('custom-download-path');
+            if (downloadPathInput) {
+                downloadPathInput.addEventListener('change', function() {
+                    console.log('下載路徑已變更，自動儲存中...');
+                    saveSettings(true); // 靜默儲存
+                });
+            }
+            
+            // 為瀏覽按鈕添加點擊事件
+            const browseButton = document.getElementById('browse-download-path');
+            if (browseButton) {
+                browseButton.addEventListener('click', function() {
+                    if (window.pywebview && window.pywebview.api) {
+                        window.pywebview.api.choose_folder()
+                            .then(selectedPath => {
+                                if (selectedPath) {
+                                    downloadPathInput.value = selectedPath;
+                                    console.log('下載路徑已變更，自動儲存中...');
+                                    saveSettings(true); // 靜默儲存
+                                }
+                            })
+                            .catch(error => {
+                                console.error('選擇資料夾失敗:', error);
+                            });
+                    }
+                });
+            }
         }
         
         /**
@@ -1487,10 +1618,11 @@
         function saveSettings(silent = false) {
             const notificationCheckbox = document.getElementById('enable-notifications');
             const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
+            const downloadPathInput = document.getElementById('custom-download-path');
             const settings = {
                 enableNotifications: notificationCheckbox ? notificationCheckbox.checked : true,
                 addResolutionToFilename: resolutionCheckbox ? resolutionCheckbox.checked : false,
-                downloadDir: 'downloads'
+                customDownloadPath: downloadPathInput ? downloadPathInput.value : ''
             };
             
             if (window.pywebview && window.pywebview.api) {
@@ -1531,6 +1663,11 @@
                                 const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
                                 if (resolutionCheckbox) {
                                     resolutionCheckbox.checked = settings.addResolutionToFilename === true;
+                                }
+                                
+                                const downloadPathInput = document.getElementById('custom-download-path');
+                                if (downloadPathInput) {
+                                    downloadPathInput.value = settings.customDownloadPath || '';
                                 }
                                 // 自動儲存重設後的設定
                                 saveSettings(true); // 靜默儲存

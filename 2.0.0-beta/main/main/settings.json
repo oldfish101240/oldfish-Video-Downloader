@@ -1,5 +1,5 @@
 {
-  "addResolutionToFilename": true,
-  "downloadDir": "downloads",
+  "addResolutionToFilename": false,
+  "customDownloadPath": "C:/Users/ASUS/Downloads",
   "enableNotifications": true
 }
