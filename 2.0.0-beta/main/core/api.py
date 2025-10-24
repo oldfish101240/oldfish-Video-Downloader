@@ -290,7 +290,13 @@ class Api(QObject):
                 resolved_download_dir = os.path.join(self.root_dir, 'downloads')
                 os.makedirs(resolved_download_dir, exist_ok=True)
 
-            self.downloader.start_download(task_id, url, normalized_quality, normalized_format, downloads_dir=resolved_download_dir)
+            # 讀取設定中的解析度檔名選項
+            settings = self.settings_manager.load_settings()
+            add_resolution = settings.get('addResolutionToFilename', False)
+
+            self.downloader.start_download(task_id, url, normalized_quality, normalized_format, 
+                                         downloads_dir=resolved_download_dir, 
+                                         add_resolution_to_filename=add_resolution)
             return "下載已開始"
         except Exception as e:
             error_console(f"開始下載失敗: {e}")
@@ -529,6 +535,22 @@ class Api(QObject):
         except Exception as e:
             error_console(f"restartApp 失敗: {e}")
     
+    @Slot()
+    def test_update_dialog(self):
+        """測試更新對話框顯示（用於調試）"""
+        try:
+            debug_console("測試更新對話框...")
+            version_info = {
+                'update_available': True,
+                'current_version': '2023.12.30',
+                'latest_version': '2024.01.15'
+            }
+            self.show_update_dialog(version_info)
+            return "測試對話框已觸發"
+        except Exception as e:
+            error_console(f"測試更新對話框失敗: {e}")
+            return f"測試失敗: {e}"
+    
     def check_and_update_ytdlp(self):
         """檢查 yt-dlp 是否需要更新；若有新版本則彈出與舊版一致的更新對話框"""
         try:
@@ -693,7 +715,7 @@ class Api(QObject):
                     const dialog = document.createElement('div');
                     dialog.style.cssText = `background:#23262f; border-radius:16px; padding:32px; max-width:420px; width:90%; box-shadow:0 4px 24px rgba(0,0,0,.3); border:1px solid #444; text-align:center;`;
                     const badge = document.createElement('div');
-                    badge.style.cssText = `width:68px; height:68px; border-radius:50%; margin:0 auto 16px auto; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px ${'${success?"#27ae60":"#c0392b"}'}; background:${'${success?"#2ecc71":"#e74c3c"}'}; color:#fff; font-size:28px;`;
+                    badge.style.cssText = `width:68px; height:68px; border-radius:50%; margin:0 auto 16px auto; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px ${success?"#27ae60":"#c0392b"}; background:${success?"#2ecc71":"#e74c3c"}; color:#fff; font-size:28px;`;
                     const img = document.createElement('img');
                     img.alt = success ? 'updated' : 'failed';
                     img.src = success ? 'assets/updated.png' : 'assets/update.png';

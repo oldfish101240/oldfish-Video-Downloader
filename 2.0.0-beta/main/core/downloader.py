@@ -20,14 +20,14 @@ class Downloader:
         self.complete_callback = complete_callback
         self.active_downloads = {}
     
-    def start_download(self, task_id, url, quality, format_type, downloads_dir=None):
+    def start_download(self, task_id, url, quality, format_type, downloads_dir=None, add_resolution_to_filename=False):
         """開始下載"""
         def download_task():
             try:
                 info_console(f"【任務{task_id}】開始下載: {url}")
                 
                 # 設定下載選項
-                ydl_opts = self._build_download_options(quality, format_type, downloads_dir)
+                ydl_opts = self._build_download_options(quality, format_type, downloads_dir, add_resolution_to_filename)
                 
                 # 設定進度回調（注入 task_id，便於前端對應）
                 last_filename = {'path': ''}
@@ -66,7 +66,7 @@ class Downloader:
         thread.start()
         self.active_downloads[task_id] = thread
     
-    def _build_download_options(self, quality, format_type, downloads_dir=None):
+    def _build_download_options(self, quality, format_type, downloads_dir=None, add_resolution_to_filename=False):
         """建構下載選項"""
         # 設定 FFMPEG 路徑
         ffmpeg_path = os.path.join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
@@ -90,8 +90,20 @@ class Downloader:
         except Exception:
             qnum = qval or '1080'
 
+        # 根據設定決定檔名模板
+        if add_resolution_to_filename:
+            if fmt_type == "音訊":
+                # 音訊格式：標題_320kbps.mp3（使用自定義位元率）
+                outtmpl = os.path.join(target_dir, f'%(title)s_{qnum}kbps.%(ext)s')
+            else:
+                # 影片格式：標題_1080p.mp4
+                outtmpl = os.path.join(target_dir, '%(title)s_%(height)sp.%(ext)s')
+        else:
+            # 預設格式：標題.mp4
+            outtmpl = os.path.join(target_dir, '%(title)s.%(ext)s')
+
         ydl_opts = {
-            'outtmpl': os.path.join(target_dir, '%(title)s.%(ext)s'),
+            'outtmpl': outtmpl,
             'format': self._get_format_selector(qnum, fmt_type),
             'ffmpeg_location': ffmpeg_path,
             'quiet': True,

@@ -5,10 +5,18 @@
 """
 
 import os
+import sys
 import math
 import hashlib
 import urllib.request
 import yt_dlp
+
+# 添加父目錄到路徑，以便導入其他模組
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from utils.logger import debug_console, info_console, error_console
 from utils.file_utils import safe_path_join
 

@@ -969,8 +969,7 @@
         body.light-theme .settings-checkbox-label {
             color: #333;
         }
-        
-        body.light-theme .settings-actions { }
+
     </style>
 </head>
 <body>
@@ -1032,6 +1031,16 @@
                             <label class="settings-checkbox-label">
                                 <input type="checkbox" id="enable-notifications" class="settings-checkbox">
                                 <span style="margin-left: 8px;">啟用下載完成通知</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">下載設定</h3>
+                        <div class="settings-item">
+                            <label class="settings-checkbox-label">
+                                <input type="checkbox" id="add-resolution-to-filename" class="settings-checkbox">
+                                <span style="margin-left: 8px;">在檔名後方加上影片格式</span>
                             </label>
                         </div>
                     </div>
@@ -1435,6 +1444,11 @@
                             notificationCheckbox.checked = settings.enableNotifications !== false;
                         }
                         
+                        const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
+                        if (resolutionCheckbox) {
+                            resolutionCheckbox.checked = settings.addResolutionToFilename === true;
+                        }
+                        
                         // 為設定項目添加自動儲存事件監聽器
                         setupAutoSaveListeners();
                     })
@@ -1456,6 +1470,15 @@
                     saveSettings(true); // 靜默儲存
                 });
             }
+            
+            // 為解析度設定添加變更監聽器
+            const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
+            if (resolutionCheckbox) {
+                resolutionCheckbox.addEventListener('change', function() {
+                    console.log('解析度設定已變更，自動儲存中...');
+                    saveSettings(true); // 靜默儲存
+                });
+            }
         }
         
         /**
@@ -1463,8 +1486,10 @@
          */
         function saveSettings(silent = false) {
             const notificationCheckbox = document.getElementById('enable-notifications');
+            const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
             const settings = {
                 enableNotifications: notificationCheckbox ? notificationCheckbox.checked : true,
+                addResolutionToFilename: resolutionCheckbox ? resolutionCheckbox.checked : false,
                 downloadDir: 'downloads'
             };
             
@@ -1501,6 +1526,11 @@
                                 const notificationCheckbox = document.getElementById('enable-notifications');
                                 if (notificationCheckbox) {
                                     notificationCheckbox.checked = settings.enableNotifications !== false;
+                                }
+                                
+                                const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
+                                if (resolutionCheckbox) {
+                                    resolutionCheckbox.checked = settings.addResolutionToFilename === true;
                                 }
                                 // 自動儲存重設後的設定
                                 saveSettings(true); // 靜默儲存

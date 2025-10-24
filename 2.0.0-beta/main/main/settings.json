@@ -1,4 +1,5 @@
 {
+  "addResolutionToFilename": true,
   "downloadDir": "downloads",
   "enableNotifications": true
 }
