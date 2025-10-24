@@ -7,7 +7,7 @@
 import os
 import json
 from config.constants import DEFAULT_SETTINGS
-from utils.logger import debug_console, error_console
+from utils.logger import debug_console, error_console, warning_console
 
 class SettingsManager:
     """設定管理器"""
@@ -23,18 +23,40 @@ class SettingsManager:
             debug_console("載入設定中...")
             
             if os.path.exists(self.settings_file):
-                with open(self.settings_file, 'r', encoding='utf-8') as f:
-                    settings = json.load(f)
-                
-                # 確保所有預設設定都存在
-                for key, value in DEFAULT_SETTINGS.items():
-                    if key not in settings:
-                        settings[key] = value
-                
-                debug_console(f"設定載入成功: {settings}")
-                return settings
+                try:
+                    with open(self.settings_file, 'r', encoding='utf-8') as f:
+                        settings = json.load(f)
+                    
+                    # 確保所有預設設定都存在
+                    for key, value in DEFAULT_SETTINGS.items():
+                        if key not in settings:
+                            settings[key] = value
+                    
+                    debug_console(f"設定載入成功: {settings}")
+                    return settings
+                    
+                except json.JSONDecodeError as e:
+                    warning_console(f"設定檔案JSON格式錯誤: {e}")
+                    warning_console("將使用預設設定並重新建立設定檔案")
+                    # 備份損壞的設定檔案
+                    backup_file = self.settings_file + '.backup'
+                    try:
+                        import shutil
+                        shutil.copy2(self.settings_file, backup_file)
+                        debug_console(f"已備份損壞的設定檔案到: {backup_file}")
+                    except Exception as backup_e:
+                        debug_console(f"備份設定檔案失敗: {backup_e}")
+                    
+                    # 重新建立設定檔案
+                    self.save_settings(DEFAULT_SETTINGS)
+                    return DEFAULT_SETTINGS.copy()
+                    
+                except UnicodeDecodeError as e:
+                    warning_console(f"設定檔案編碼錯誤: {e}")
+                    warning_console("將使用預設設定")
+                    return DEFAULT_SETTINGS.copy()
             else:
-                debug_console("使用預設設定")
+                debug_console("設定檔案不存在，使用預設設定")
                 return DEFAULT_SETTINGS.copy()
                 
         except Exception as e:

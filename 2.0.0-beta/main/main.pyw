@@ -17,19 +17,26 @@ if python_embed_dir not in sys.path:
     sys.path.insert(0, python_embed_dir)
 
 from ui.main_window import create_app
-from utils.logger import debug_console, info_console, error_console
+from utils.logger import debug_console, info_console, error_console, warning_console, set_log_level, LogLevel
 from utils.file_utils import ensure_directories
 
 def main():
     """主函數"""
     try:
+        # 設定日誌等級（可根據需要調整）
+        # DEBUG: 顯示所有日誌
+        # INFO: 顯示一般資訊和以上
+        # WARNING: 顯示警告和錯誤
+        # ERROR: 只顯示錯誤
+        set_log_level(LogLevel.DEBUG)
+        
         # 獲取根目錄
         ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
         if not os.path.isabs(ROOT_DIR):
             ROOT_DIR = os.path.abspath(ROOT_DIR)
         
         info_console("啟動 oldfish影片下載器...")
-        info_console(f"根目錄: {ROOT_DIR}")
+        debug_console(f"根目錄: {ROOT_DIR}")
         
         # 確保必要的目錄存在
         ensure_directories(ROOT_DIR)

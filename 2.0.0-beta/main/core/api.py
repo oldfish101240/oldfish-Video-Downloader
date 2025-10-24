@@ -12,7 +12,7 @@ import subprocess
 import yt_dlp
 from PySide6.QtCore import QObject, Slot, Signal
 from PySide6.QtWidgets import QFileDialog
-from utils.logger import debug_console, info_console, error_console
+from utils.logger import debug_console, info_console, error_console, warning_console
 from utils.file_utils import safe_path_join
 from utils.version_utils import compare_versions
 from config.settings import SettingsManager
@@ -168,12 +168,12 @@ class Api(QObject):
             js_call = f"{function_name}({', '.join(safe_args)})"
             self._eval_js(js_call)
         except Exception as e:
-            debug_console(f"安全JavaScript執行失敗: {e}")
+            warning_console(f"安全JavaScript執行失敗: {e}")
             try:
                 safe_script = f"{function_name}()"
                 self._eval_js(safe_script)
             except Exception as e2:
-                debug_console(f"後備JavaScript執行也失敗: {e2}")
+                warning_console(f"後備JavaScript執行也失敗: {e2}")
     
     @Slot(str)
     def _on_eval_js_requested(self, script):
@@ -195,7 +195,7 @@ class Api(QObject):
             else:
                 percent = 0
                 status = "下載中 (未知進度)"
-            debug_console(f"[進度] 任務{task_id}: {percent:.1f}% - {status}")
+            info_console(f"[進度] 任務{task_id}: {percent:.1f}% - {status}")
             # 傳遞當前檔案路徑（若可得）以保持與舊版一致
             file_arg = d.get('filename') or ''
             safe_file_arg = (file_arg or '').replace('\\', '/')
@@ -231,7 +231,7 @@ class Api(QObject):
                     self._send_notification("下載完成", f"任務 {task_id} 已完成")
                     
         except Exception as e:
-            debug_console(f"通知下載完成失敗: {e}")
+            warning_console(f"通知下載完成失敗: {e}")
 
     @Slot(result=str)
     def choose_folder(self):
@@ -313,15 +313,27 @@ class Api(QObject):
     def open_file_location(self, file_path):
         """開啟檔案所在資料夾（支援 Windows）"""
         try:
-            if not file_path:
+            if not file_path or not file_path.strip():
                 return "檔案路徑不可用"
-            # 統一分隔符
-            fp = str(file_path).replace('/', os.sep)
+            
+            # 統一分隔符並清理路徑
+            fp = str(file_path).strip().replace('/', os.sep)
+            
+            # 驗證檔案路徑安全性
+            if not os.path.isabs(fp):
+                fp = os.path.abspath(fp)
+            
+            # 檢查路徑是否在允許的範圍內（防止目錄遍歷攻擊）
+            if not fp.startswith(self.root_dir) and not fp.startswith(os.path.expanduser("~")):
+                return "檔案路徑不在允許範圍內"
+            
             if os.path.exists(fp):
                 # 在 Windows 上使用 explorer /select,
                 if sys.platform.startswith('win'):
                     import subprocess
-                    subprocess.Popen(["explorer", "/select,", fp])
+                    # 使用引號包圍路徑以防止特殊字符問題
+                    escaped_path = f'"{fp}"'
+                    subprocess.Popen(["explorer", "/select,", escaped_path])
                     return "已開啟檔案位置"
                 else:
                     # 其他平台開啟所在資料夾
@@ -338,12 +350,28 @@ class Api(QObject):
     def open_external_link(self, url):
         """使用系統預設瀏覽器開啟外部連結"""
         try:
-            if not url:
+            if not url or not url.strip():
                 return "連結不可用"
+            
+            url = url.strip()
+            
+            # 驗證URL格式
+            import re
+            url_pattern = re.compile(
+                r'^https?://'  # http:// 或 https://
+                r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # 域名
+                r'localhost|'  # localhost
+                r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP地址
+                r'(?::\d+)?'  # 可選端口
+                r'(?:/?|[/?]\S+)$', re.IGNORECASE)
             
             # 確保 URL 格式正確
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
+            
+            # 驗證URL格式
+            if not url_pattern.match(url):
+                return "無效的URL格式"
             
             # 使用系統預設瀏覽器開啟
             if sys.platform.startswith('win'):
@@ -430,20 +458,69 @@ class Api(QObject):
     def check_ytdlp_version(self):
         """檢查 yt-dlp 版本，並在 debug 中顯示目前與線上最新版本"""
         try:
+            import urllib.request, json, time, os
+            
             current_version = yt_dlp.version.__version__
             debug_console(f"目前 yt-dlp 版本: {current_version}")
-            # 從 PyPI 查最新版本
-            try:
-                import urllib.request, json
-                with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=6) as resp:
-                    data = json.loads(resp.read().decode('utf-8'))
-                    latest = data.get('info', {}).get('version') or ''
-                    if latest:
-                        debug_console(f"偵測到的最新 yt-dlp 版本: {latest}")
-                    else:
-                        debug_console("無法解析最新 yt-dlp 版本")
-            except Exception as e2:
-                debug_console(f"取得線上最新版本失敗: {e2}")
+            
+            # 檢查快取檔案
+            cache_file = os.path.join(self.root_dir, 'main', 'ytdlp_version_cache.json')
+            latest = None
+            
+            # 檢查快取是否有效（24小時內）
+            cache_valid = False
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cache_data = json.load(f)
+                    cache_time = cache_data.get('timestamp', 0)
+                    cache_version = cache_data.get('version', '')
+                    
+                    # 檢查快取是否在24小時內且版本不為空
+                    if (time.time() - cache_time < 86400) and cache_version:
+                        latest = cache_version
+                        cache_valid = True
+                        debug_console(f"使用快取的版本資訊: {latest}")
+                except Exception as e:
+                    debug_console(f"讀取版本快取失敗: {e}")
+            
+            # 如果快取無效，從網路獲取
+            if not cache_valid:
+                try:
+                    # 減少超時時間到5秒
+                    with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=5) as resp:
+                        data = json.loads(resp.read().decode('utf-8'))
+                        latest = data.get('info', {}).get('version') or ''
+                    
+                    # 儲存到快取
+                    try:
+                        cache_data = {
+                            'version': latest,
+                            'timestamp': time.time()
+                        }
+                        with open(cache_file, 'w', encoding='utf-8') as f:
+                            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                        debug_console(f"版本資訊已快取: {latest}")
+                    except Exception as e:
+                        debug_console(f"儲存版本快取失敗: {e}")
+                        
+                except Exception as e:
+                    debug_console(f"網路版本檢查失敗: {e}")
+                    # 如果網路失敗但有舊快取，使用舊快取
+                    if os.path.exists(cache_file):
+                        try:
+                            with open(cache_file, 'r', encoding='utf-8') as f:
+                                cache_data = json.load(f)
+                            latest = cache_data.get('version', '')
+                            debug_console(f"使用舊快取版本: {latest}")
+                        except Exception:
+                            pass
+            
+            if latest:
+                debug_console(f"偵測到的最新 yt-dlp 版本: {latest}")
+            else:
+                debug_console("無法取得最新 yt-dlp 版本")
+            
             return current_version
         except Exception as e:
             error_console(f"檢查版本失敗: {e}")
@@ -561,13 +638,63 @@ class Api(QObject):
     def check_and_update_ytdlp(self):
         """檢查 yt-dlp 是否需要更新；若有新版本則彈出與舊版一致的更新對話框"""
         try:
-            import urllib.request, json
-            debug_console("檢查 yt-dlp 版本...")
+            import urllib.request, json, time, os
+            
+            # 檢查快取檔案
+            cache_file = os.path.join(self.root_dir, 'main', 'ytdlp_version_cache.json')
             current_version = yt_dlp.version.__version__
             latest = None
-            with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=10) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                latest = data.get('info', {}).get('version') or ''
+            
+            # 檢查快取是否有效（24小時內）
+            cache_valid = False
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cache_data = json.load(f)
+                    cache_time = cache_data.get('timestamp', 0)
+                    cache_version = cache_data.get('version', '')
+                    
+                    # 檢查快取是否在24小時內且版本不為空
+                    if (time.time() - cache_time < 86400) and cache_version:
+                        latest = cache_version
+                        cache_valid = True
+                        debug_console(f"使用快取的版本資訊: {latest}")
+                except Exception as e:
+                    debug_console(f"讀取版本快取失敗: {e}")
+            
+            # 如果快取無效，從網路獲取
+            if not cache_valid:
+                debug_console("檢查 yt-dlp 版本...")
+                try:
+                    # 減少超時時間到5秒
+                    with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=5) as resp:
+                        data = json.loads(resp.read().decode('utf-8'))
+                        latest = data.get('info', {}).get('version') or ''
+                    
+                    # 儲存到快取
+                    try:
+                        cache_data = {
+                            'version': latest,
+                            'timestamp': time.time()
+                        }
+                        with open(cache_file, 'w', encoding='utf-8') as f:
+                            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                        debug_console(f"版本資訊已快取: {latest}")
+                    except Exception as e:
+                        debug_console(f"儲存版本快取失敗: {e}")
+                        
+                except Exception as e:
+                    debug_console(f"網路版本檢查失敗: {e}")
+                    # 如果網路失敗但有舊快取，使用舊快取
+                    if os.path.exists(cache_file):
+                        try:
+                            with open(cache_file, 'r', encoding='utf-8') as f:
+                                cache_data = json.load(f)
+                            latest = cache_data.get('version', '')
+                            debug_console(f"使用舊快取版本: {latest}")
+                        except Exception:
+                            pass
+            
             debug_console(f"目前版本: {current_version}")
             if latest:
                 debug_console(f"偵測到的最新版本: {latest}")
@@ -591,11 +718,59 @@ class Api(QObject):
     def check_ytdlp_update_detail(self):
         """回傳是否需要更新的詳細資訊（對齊舊版資料結構）"""
         try:
-            import urllib.request, json
+            import urllib.request, json, time, os
+            
+            # 檢查快取檔案
+            cache_file = os.path.join(self.root_dir, 'main', 'ytdlp_version_cache.json')
             current_version = yt_dlp.version.__version__
-            with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=10) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                latest_version = data.get('info', {}).get('version') or ''
+            latest_version = None
+            
+            # 檢查快取是否有效（24小時內）
+            cache_valid = False
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cache_data = json.load(f)
+                    cache_time = cache_data.get('timestamp', 0)
+                    cache_version = cache_data.get('version', '')
+                    
+                    # 檢查快取是否在24小時內且版本不為空
+                    if (time.time() - cache_time < 86400) and cache_version:
+                        latest_version = cache_version
+                        cache_valid = True
+                except Exception as e:
+                    debug_console(f"讀取版本快取失敗: {e}")
+            
+            # 如果快取無效，從網路獲取
+            if not cache_valid:
+                try:
+                    # 減少超時時間到5秒
+                    with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=5) as resp:
+                        data = json.loads(resp.read().decode('utf-8'))
+                        latest_version = data.get('info', {}).get('version') or ''
+                    
+                    # 儲存到快取
+                    try:
+                        cache_data = {
+                            'version': latest_version,
+                            'timestamp': time.time()
+                        }
+                        with open(cache_file, 'w', encoding='utf-8') as f:
+                            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        debug_console(f"儲存版本快取失敗: {e}")
+                        
+                except Exception as e:
+                    debug_console(f"網路版本檢查失敗: {e}")
+                    # 如果網路失敗但有舊快取，使用舊快取
+                    if os.path.exists(cache_file):
+                        try:
+                            with open(cache_file, 'r', encoding='utf-8') as f:
+                                cache_data = json.load(f)
+                            latest_version = cache_data.get('version', '')
+                        except Exception:
+                            pass
+            
             if latest_version:
                 if compare_versions(current_version, latest_version) < 0:
                     return {
@@ -610,7 +785,7 @@ class Api(QObject):
                 }
             return None
         except Exception as e:
-            error_console(f"檢查版本細節失敗: {e}")
+            debug_console(f"檢查版本細節失敗: {e}")
             return None
 
     @Slot()

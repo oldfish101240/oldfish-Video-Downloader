@@ -13,7 +13,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QIcon
 from core.api import Api
 from config.constants import APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
-from utils.logger import debug_console, info_console, error_console
+from utils.logger import debug_console, info_console, error_console, warning_console
 from utils.file_utils import get_assets_path
 from ui.html_content import get_html_content
 

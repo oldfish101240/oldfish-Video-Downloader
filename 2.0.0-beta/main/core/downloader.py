@@ -7,7 +7,7 @@
 import os
 import threading
 import yt_dlp
-from utils.logger import debug_console, info_console, error_console
+from utils.logger import debug_console, info_console, error_console, warning_console
 from utils.file_utils import safe_path_join
 
 class Downloader:
@@ -19,6 +19,7 @@ class Downloader:
         self.progress_callback = progress_callback
         self.complete_callback = complete_callback
         self.active_downloads = {}
+        self._lock = threading.Lock()
     
     def start_download(self, task_id, url, quality, format_type, downloads_dir=None, add_resolution_to_filename=False):
         """開始下載"""
@@ -64,7 +65,10 @@ class Downloader:
         # 在單獨的執行緒中執行下載
         thread = threading.Thread(target=download_task, daemon=True)
         thread.start()
-        self.active_downloads[task_id] = thread
+        
+        # 使用鎖保護執行緒字典的更新
+        with self._lock:
+            self.active_downloads[task_id] = thread
     
     def _build_download_options(self, quality, format_type, downloads_dir=None, add_resolution_to_filename=False):
         """建構下載選項"""
@@ -75,7 +79,7 @@ class Downloader:
         try:
             os.makedirs(target_dir, exist_ok=True)
         except Exception as e:
-            error_console(f"建立下載目錄失敗: {e}")
+            warning_console(f"建立下載目錄失敗: {e}")
             # 回退到預設 downloads 目錄
             target_dir = self.downloads_dir
         
@@ -141,11 +145,13 @@ class Downloader:
     
     def cancel_download(self, task_id):
         """取消下載"""
-        if task_id in self.active_downloads:
-            # 注意：yt-dlp 沒有直接的取消方法，這裡只是移除追蹤
-            del self.active_downloads[task_id]
-            debug_console(f"【任務{task_id}】下載已取消")
+        with self._lock:
+            if task_id in self.active_downloads:
+                # 注意：yt-dlp 沒有直接的取消方法，這裡只是移除追蹤
+                del self.active_downloads[task_id]
+                debug_console(f"【任務{task_id}】下載已取消")
     
     def get_download_status(self, task_id):
         """獲取下載狀態"""
-        return task_id in self.active_downloads
+        with self._lock:
+            return task_id in self.active_downloads

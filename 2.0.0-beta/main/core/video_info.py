@@ -17,7 +17,7 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from utils.logger import debug_console, info_console, error_console
+from utils.logger import debug_console, info_console, error_console, warning_console
 from utils.file_utils import safe_path_join
 
 def extract_video_info(url, root_dir):
@@ -144,6 +144,9 @@ def cache_thumbnail(thumb_url, root_dir):
         if os.path.exists(cache_file):
             return f"thumb_cache/{thumb_hash}.jpg"
         
+        # 檢查快取目錄大小，如果超過限制則清理舊檔案
+        _cleanup_thumbnail_cache(cache_dir, max_size_mb=50)
+        
         # 下載縮圖
         urllib.request.urlretrieve(thumb_url, cache_file)
         return f"thumb_cache/{thumb_hash}.jpg"
@@ -151,6 +154,43 @@ def cache_thumbnail(thumb_url, root_dir):
     except Exception as e:
         debug_console(f"快取縮圖失敗: {e}")
         return thumb_url
+
+def _cleanup_thumbnail_cache(cache_dir, max_size_mb=50):
+    """清理縮圖快取，保持目錄大小在限制內"""
+    try:
+        if not os.path.exists(cache_dir):
+            return
+        
+        # 計算目錄總大小
+        total_size = 0
+        files_info = []
+        
+        for filename in os.listdir(cache_dir):
+            filepath = os.path.join(cache_dir, filename)
+            if os.path.isfile(filepath):
+                size = os.path.getsize(filepath)
+                total_size += size
+                files_info.append((filepath, os.path.getmtime(filepath), size))
+        
+        max_size_bytes = max_size_mb * 1024 * 1024
+        
+        # 如果超過限制，按修改時間排序並刪除最舊的檔案
+        if total_size > max_size_bytes:
+            files_info.sort(key=lambda x: x[1])  # 按修改時間排序
+            
+            for filepath, _, size in files_info:
+                if total_size <= max_size_bytes:
+                    break
+                
+                try:
+                    os.remove(filepath)
+                    total_size -= size
+                    debug_console(f"已清理舊縮圖快取: {os.path.basename(filepath)}")
+                except Exception as e:
+                    warning_console(f"清理縮圖快取失敗: {e}")
+                    
+    except Exception as e:
+        warning_console(f"縮圖快取清理失敗: {e}")
 
 def process_formats(formats):
     """處理格式和畫質"""

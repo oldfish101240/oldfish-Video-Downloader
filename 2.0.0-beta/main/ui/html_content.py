@@ -13,11 +13,30 @@ def get_html_content():
     if os.path.exists(html_file):
         try:
             with open(html_file, 'r', encoding='utf-8') as f:
-                return f.read()
+                content = f.read()
+                if content.strip():
+                    from utils.logger import info_console
+                    info_console(f"成功載入 main.html，長度: {len(content)}")
+                    return content
+                else:
+                    from utils.logger import warning_console
+                    warning_console("main.html 檔案為空，使用預設內容")
+        except UnicodeDecodeError as e:
+            from utils.logger import error_console
+            error_console(f"main.html 編碼錯誤: {e}")
+        except PermissionError as e:
+            from utils.logger import error_console
+            error_console(f"main.html 權限不足: {e}")
         except Exception as e:
-            print(f"讀取 main.html 失敗: {e}")
+            from utils.logger import error_console
+            error_console(f"讀取 main.html 失敗: {e}")
+    else:
+        from utils.logger import warning_console
+        warning_console(f"main.html 檔案不存在: {html_file}")
     
     # 如果檔案不存在或讀取失敗，返回簡化版本
+    from utils.logger import info_console
+    info_console("使用內建HTML內容")
     return '''<!DOCTYPE html>
 <html lang="zh-tw">
 <head>
