@@ -1032,9 +1032,175 @@
             color: #333;
         }
 
+        /* Toast 通知樣式 */
+        #toast-container {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 12000;
+            pointer-events: none;
+        }
+
+        .toast-item {
+            min-width: 280px;
+            max-width: 360px;
+            background: rgba(32, 36, 45, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(78, 205, 143, 0.35);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+            border-radius: 16px;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            color: #f3f4f6;
+            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            animation: toastSlideIn 0.4s var(--ease-smooth);
+            pointer-events: auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .toast-item.success {
+            border-color: rgba(46, 204, 113, 0.55);
+        }
+
+        .toast-item .toast-title {
+            font-size: 16px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: 0.3px;
+        }
+
+        .toast-item .toast-message {
+            font-size: 14px;
+            color: #d1d5db;
+            line-height: 1.5;
+        }
+
+        .toast-item .toast-close {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            background: transparent;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 4px;
+            line-height: 1;
+            transition: color 0.2s ease, transform 0.2s ease;
+        }
+
+        .toast-item .toast-close:hover {
+            color: #f3f4f6;
+            transform: scale(1.05);
+        }
+
+        .toast-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            width: 100%;
+            background: rgba(255,255,255,0.08);
+        }
+
+        .toast-progress > span {
+            display: block;
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, #27ae60, #2ecc71);
+            transform-origin: left;
+            animation: toastProgress 4.5s linear forwards;
+        }
+
+        @keyframes toastSlideIn {
+            0% {
+                transform: translateY(24px) translateX(20px);
+                opacity: 0;
+            }
+            100% {
+                transform: translateY(0) translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes toastFadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(8px) scale(0.97);
+            }
+        }
+
+        @keyframes toastProgress {
+            from { transform: scaleX(1); }
+            to { transform: scaleX(0); }
+        }
+
+        body.light-theme .toast-item {
+            background: rgba(248, 250, 252, 0.95);
+            color: #1f2933;
+            border-color: rgba(46, 204, 113, 0.45);
+        }
+
+        body.light-theme .toast-item .toast-message {
+            color: #374151;
+        }
+
+        /* 禁止選取所有文字和圖片，除了影片資訊 */
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+        
+        /* 允許選取影片資訊 */
+        .video-modal-title,
+        .video-modal-meta,
+        .video-modal-uploader {
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+        
+        /* 允許選取輸入框文字 */
+        input[type="text"],
+        input[type="password"],
+        textarea {
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+        
+        /* 禁止選取圖片 */
+        img {
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            -webkit-user-drag: none; /* 防止拖拽圖片 */
+            -khtml-user-drag: none;
+            -moz-user-drag: none;
+            -o-user-drag: none;
+        }
+
     </style>
 </head>
 <body>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
     <div class="container">
         <div class="sidebar" id="sidebar">
             <div class="menu-btn" onclick="toggleSidebar()">
@@ -1092,8 +1258,7 @@
                         <div class="settings-item">
                             <label class="settings-checkbox-label">
                                 <input type="checkbox" id="enable-notifications" class="settings-checkbox">
-                                <span style="margin-left: 8px;">啟用下載完成通知</span>
-                            </label>
+                                <span style="margin-left: 8px;">啟用下載完成通知(實驗性)</span>
                         </div>
                     </div>
                     
@@ -1141,7 +1306,7 @@
                             版本：<span id="about-version">—</span>
                         </div>
                         <div class="settings-item" style="color:#e5e7eb; font-size:15px; margin-bottom:8px;">
-                            發布日期：2025.10.20
+                            發布日期：2025.11.09
                         </div>
                         <div class="settings-item" style="color:#e5e7eb; font-size:15px; margin-bottom:8px;">
                             作者：老魚oldfish
@@ -1239,6 +1404,7 @@
         // 儲存所有下載任務的陣列
         let downloadQueue = [];
         let nextTaskId = 0; // 用於給每個任務一個獨特的ID
+        window.__ofNotificationsEnabled = true;
 
         /**
          * 將影片畫質從高到低排序。
@@ -1451,6 +1617,21 @@
             modal.classList.remove('show');
             setTimeout(() => {
                 modal.style.display = 'none';
+                // 如果取消的是文件已存在的確認，需要通知後端取消下載
+                if (window._pendingTaskId) {
+                    const taskId = window._pendingTaskId;
+                    delete window._pendingTaskId;
+                    // 通知後端取消下載
+                    if (window.pywebview && window.pywebview.api) {
+                        window.pywebview.api.confirm_redownload(taskId, false)
+                            .then(result => {
+                                console.log("取消下載結果:", result);
+                            })
+                            .catch(error => {
+                                console.error("取消下載時出錯:", error);
+                            });
+                    }
+                }
                 window._confirmCallback = null;
             }, 200);
         }
@@ -1535,6 +1716,7 @@
                 window.pywebview.api.load_settings()
                     .then(settings => {
                         console.log('設定已載入:', settings);
+                        window.__ofNotificationsEnabled = settings.enableNotifications !== false;
                         // 更新 UI
                         const notificationCheckbox = document.getElementById('enable-notifications');
                         if (notificationCheckbox) {
@@ -1564,36 +1746,46 @@
          * 設置自動儲存事件監聽器
          */
         function setupAutoSaveListeners() {
+            // 防止重複綁定事件監聽器
+            if (window._listenersSetup) {
+                return;
+            }
+            window._listenersSetup = true;
+            
             // 為通知設定添加變更監聽器
             const notificationCheckbox = document.getElementById('enable-notifications');
-            if (notificationCheckbox) {
+            if (notificationCheckbox && !notificationCheckbox.hasAttribute('data-listener-added')) {
                 notificationCheckbox.addEventListener('change', function() {
                     console.log('通知設定已變更，自動儲存中...');
+                    window.__ofNotificationsEnabled = !!this.checked;
                     saveSettings(true); // 靜默儲存
                 });
+                notificationCheckbox.setAttribute('data-listener-added', 'true');
             }
             
             // 為解析度設定添加變更監聽器
             const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
-            if (resolutionCheckbox) {
+            if (resolutionCheckbox && !resolutionCheckbox.hasAttribute('data-listener-added')) {
                 resolutionCheckbox.addEventListener('change', function() {
                     console.log('解析度設定已變更，自動儲存中...');
                     saveSettings(true); // 靜默儲存
                 });
+                resolutionCheckbox.setAttribute('data-listener-added', 'true');
             }
             
             // 為下載路徑設定添加變更監聽器
             const downloadPathInput = document.getElementById('custom-download-path');
-            if (downloadPathInput) {
+            if (downloadPathInput && !downloadPathInput.hasAttribute('data-listener-added')) {
                 downloadPathInput.addEventListener('change', function() {
                     console.log('下載路徑已變更，自動儲存中...');
                     saveSettings(true); // 靜默儲存
                 });
+                downloadPathInput.setAttribute('data-listener-added', 'true');
             }
             
             // 為瀏覽按鈕添加點擊事件
             const browseButton = document.getElementById('browse-download-path');
-            if (browseButton) {
+            if (browseButton && !browseButton.hasAttribute('data-listener-added')) {
                 browseButton.addEventListener('click', function() {
                     if (window.pywebview && window.pywebview.api) {
                         window.pywebview.api.choose_folder()
@@ -1609,6 +1801,7 @@
                             });
                     }
                 });
+                browseButton.setAttribute('data-listener-added', 'true');
             }
         }
         
@@ -1624,6 +1817,7 @@
                 addResolutionToFilename: resolutionCheckbox ? resolutionCheckbox.checked : false,
                 customDownloadPath: downloadPathInput ? downloadPathInput.value : ''
             };
+            window.__ofNotificationsEnabled = settings.enableNotifications !== false;
             
             if (window.pywebview && window.pywebview.api) {
                 window.pywebview.api.save_settings(settings)
@@ -1654,6 +1848,7 @@
                         window.pywebview.api.reset_to_defaults()
                             .then(settings => {
                                 console.log('設定已重設:', settings);
+                                window.__ofNotificationsEnabled = settings.enableNotifications !== false;
                                 // 更新 UI
                                 const notificationCheckbox = document.getElementById('enable-notifications');
                                 if (notificationCheckbox) {
@@ -1691,6 +1886,70 @@
             if (lb) { lb.style.display = 'none'; }
         }
 
+        window.__ofShowToast = function(title, message, variant = 'success') {
+            try {
+                if (!window.__ofNotificationsEnabled) {
+                    return;
+                }
+                const container = document.getElementById('toast-container');
+                if (!container) {
+                    console.warn('toast container missing');
+                    return;
+                }
+
+                const toast = document.createElement('div');
+                toast.className = `toast-item ${variant || 'success'}`.trim();
+
+                const titleEl = document.createElement('div');
+                titleEl.className = 'toast-title';
+                const iconWrap = document.createElement('span');
+                iconWrap.style.cssText = 'display:inline-flex;width:26px;height:26px;border-radius:8px;background:rgba(46,204,113,0.18);align-items:center;justify-content:center;font-size:14px;color:#2ecc71;font-weight:700;';
+                iconWrap.textContent = '✓';
+                const titleText = document.createElement('span');
+                titleText.textContent = title || '通知';
+                titleEl.appendChild(iconWrap);
+                titleEl.appendChild(titleText);
+
+                const msgEl = document.createElement('div');
+                msgEl.className = 'toast-message';
+                msgEl.textContent = message || '';
+
+                const closeBtn = document.createElement('button');
+                closeBtn.className = 'toast-close';
+                closeBtn.setAttribute('aria-label', '關閉通知');
+                closeBtn.innerHTML = '&times;';
+
+                const progressBar = document.createElement('div');
+                progressBar.className = 'toast-progress';
+                const progress = document.createElement('span');
+                progressBar.appendChild(progress);
+
+                toast.appendChild(titleEl);
+                toast.appendChild(msgEl);
+                toast.appendChild(closeBtn);
+                toast.appendChild(progressBar);
+
+                container.appendChild(toast);
+
+                const hideToast = () => {
+                    toast.style.animation = 'toastFadeOut 0.35s forwards';
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 320);
+                };
+
+                const autoTimer = setTimeout(hideToast, 4500);
+
+                closeBtn.addEventListener('click', () => {
+                    clearTimeout(autoTimer);
+                    hideToast();
+                });
+
+            } catch (err) {
+                console.error('顯示 Toast 失敗', err);
+            }
+        };
+
         /**
          * 顯示影片詳細資訊模態視窗。
          * @param {string} url - 影片網址。
@@ -1714,6 +1973,15 @@
                     var qualityOptions = document.getElementById('quality-options');
                     qualityOptions.innerHTML = '';
                     var qualities = (info.qualities || []).slice();
+                    // 過濾掉低於360p的畫質選項
+                    qualities = qualities.filter(function(q) {
+                        function getValue(q) {
+                            if (q.label.endsWith('K')) return parseInt(q.label) * 1000;
+                            var m = q.label.match(/(\d+)p/);
+                            return m ? parseInt(m[1]) : 0;
+                        }
+                        return getValue(q) >= 360;
+                    });
                     qualities.sort(function(a, b) {
                         // 解析 label 內的數字（如 4K, 1080p, 720p, 480p, 360p）
                         function getValue(q) {
@@ -1974,6 +2242,15 @@
                 if (lastVideoInfo && lastVideoInfo.qualities) {{
                     qualityOptions.innerHTML = '';
                     let sortedQualities = sortQualities(lastVideoInfo.qualities);
+                    // 過濾掉低於360p的畫質選項
+                    sortedQualities = sortedQualities.filter(q => {{
+                        function getValue(q) {{
+                            if (q.label.endsWith('K')) return parseInt(q.label) * 1000;
+                            var m = q.label.match(/(\d+)p/);
+                            return m ? parseInt(m[1]) : 0;
+                        }}
+                        return getValue(q) >= 360;
+                    }});
                     let defaultSet = false;
                     sortedQualities.forEach(q => {{
                         const optionDiv = document.createElement('div');
@@ -2025,7 +2302,8 @@
                 format: format,
                 progress: 0, // 初始進度
                 status: '等待中', // 初始狀態
-                filePath: '' // 新增檔案路徑，下載完成後會更新
+                filePath: '', // 新增檔案路徑，下載完成後會更新
+                eta: '' // 預估剩餘時間
             });
 
             // 清理輸入狀態
@@ -2037,7 +2315,37 @@
                 try {{
                     const task = downloadQueue[downloadQueue.length - 1];
                     window.pywebview.api.start_download(task.id, url, quality, format)
-                        .then(result => {{ console.log("下載任務啟動結果:", result); }})
+                        .then(result => {{ 
+                            console.log("下載任務啟動結果:", result);
+                            // 檢查是否文件已存在
+                            if (result && result.startsWith('FILE_EXISTS:')) {{
+                                const existingFile = result.substring('FILE_EXISTS:'.length);
+                                const fileName = existingFile.split(/[/\\]/).pop();
+                                // 保存任務ID以便在取消時使用
+                                window._pendingTaskId = task.id;
+                                showConfirmModal(
+                                    '文件已存在',
+                                    `目標資料夾中已存在同名文件：<br><strong>${fileName}</strong><br><br>是否要刪除舊文件並重新下載？`,
+                                    () => {{
+                                        // 用戶確認刪除並重新下載
+                                        const taskId = window._pendingTaskId;
+                                        delete window._pendingTaskId;
+                                        window.pywebview.api.confirm_redownload(taskId, true)
+                                            .then(result => {{
+                                                console.log("確認重新下載結果:", result);
+                                                if (result && result.includes('失敗')) {{
+                                                    showModal('錯誤', result);
+                                                }}
+                                            }})
+                                            .catch(error => {{
+                                                console.error("確認重新下載時出錯:", error);
+                                                showModal('錯誤', '確認重新下載時發生錯誤');
+                                            }});
+                                        closeConfirmModal();
+                                    }}
+                                );
+                            }}
+                        }})
                         .catch(error => {{ console.error("啟動下載任務時出錯:", error); }});
                 }} catch (e) {{
                     console.error("排程下載任務時出錯:", e);
@@ -2126,28 +2434,38 @@
             if (taskIndex !== -1) {{
                 downloadQueue[taskIndex].progress = progress;
                 downloadQueue[taskIndex].status = status;
+                // 保存 ETA 信息（如果 message 包含）
+                if (message) {{
+                    downloadQueue[taskIndex].eta = message;
+                }}
                 if (filePath) {{
                     downloadQueue[taskIndex].filePath = filePath; // 更新檔案路徑
-                }}
-                // 如果有額外訊息，可以顯示
-                if (message) {{
-                    console.log(`Task ${taskId} update: ${message}`);
                 }}
                 // 找到對應的 DOM 元素並更新
                 const itemDiv = document.querySelector(`.queue-item[data-task-id="${taskId}"]`);
                 if (itemDiv) {{
-                    itemDiv.querySelector('.progress-bar').style.width = `${progress}%`;
-                    itemDiv.querySelector('.progress-text').innerText = `${status} (${progress.toFixed(1)}%)`;
-                    // 只有當狀態為「已完成」且有 filePath 時才啟用按鈕
+                    const progressBar = itemDiv.querySelector('.progress-bar');
+                    const progressText = itemDiv.querySelector('.progress-text');
                     const openFolderBtn = itemDiv.querySelector('.queue-item-action-btn');
-                    if (status === '已完成' && downloadQueue[taskIndex].filePath) {{ // 檢查 task.filePath
-                        openFolderBtn.disabled = false; // 啟用按鈕
-                        openFolderBtn.style.opacity = '1';
-                        openFolderBtn.style.cursor = 'pointer';
-                    }} else {{
-                        openFolderBtn.disabled = true; // 禁用按鈕
-                        openFolderBtn.style.opacity = '0.5'; // 變灰
-                        openFolderBtn.style.cursor = 'not-allowed';
+                    
+                    if (progressBar) {{
+                        progressBar.style.width = `${progress}%`;
+                    }}
+                    if (progressText) {{
+                        // 顯示進度文本（status 中已包含 ETA 信息）
+                        progressText.innerText = `${status} (${progress.toFixed(1)}%)`;
+                    }}
+                    // 只有當狀態為「已完成」時才啟用按鈕（不再依賴filePath）
+                    if (openFolderBtn) {{
+                        if (status === '已完成') {{
+                            openFolderBtn.disabled = false; // 啟用按鈕
+                            openFolderBtn.style.opacity = '1';
+                            openFolderBtn.style.cursor = 'pointer';
+                        }} else {{
+                            openFolderBtn.disabled = true; // 禁用按鈕
+                            openFolderBtn.style.opacity = '0.5'; // 變灰
+                            openFolderBtn.style.cursor = 'not-allowed';
+                        }}
                     }}
                 }}
             }}
@@ -2165,21 +2483,22 @@
                 return;
             }}
             
-            if (!task.filePath) {{
-                console.error("任務沒有檔案路徑:", task);
-                showModal("錯誤", "檔案路徑不可用。");
-                return;
+            // 使用新的API方法，根據任務ID自動追蹤檔案位置
+            if (window.api) {{
+                window.api.open_file_location_by_task(taskId)
+                    .then(result => {{
+                        console.log("開啟檔案位置結果:", result);
+                        if (result.includes("失敗") || result.includes("錯誤")) {{
+                            showModal("錯誤", result);
+                        }}
+                    }})
+                    .catch(error => {{
+                        console.error("開啟檔案位置時出錯:", error);
+                        showModal("錯誤", "無法開啟檔案位置。");
+                    }});
+            }} else {{
+                showModal("錯誤", "API 未初始化");
             }}
-            
-            // 傳遞實際的檔案路徑給後端
-            window.pywebview.api.open_file_location(task.filePath)
-                .then(result => {{
-                    console.log("開啟檔案位置結果:", result);
-                }})
-                .catch(error => {{
-                    console.error("開啟檔案位置時出錯:", error);
-                    showModal("錯誤", "無法開啟檔案位置。");
-                }});
         }}
 
 
@@ -2200,6 +2519,41 @@
                 if (formatSelect && !formatSelect.contains(event.target)) {{
                     closeSelect('format-select');
                 }}
+            }}
+        }});
+
+        // 禁止右鍵選單
+        document.addEventListener('contextmenu', (e) => {{
+            e.preventDefault();
+            return false;
+        }});
+        
+        // 禁止鍵盤快捷鍵（F12、Ctrl+Shift+I、Ctrl+U等）
+        document.addEventListener('keydown', (e) => {{
+            // 禁止 F12（開發者工具）
+            if (e.key === 'F12') {{
+                e.preventDefault();
+                return false;
+            }}
+            // 禁止 Ctrl+Shift+I（開發者工具）
+            if (e.ctrlKey && e.shiftKey && e.key === 'I') {{
+                e.preventDefault();
+                return false;
+            }}
+            // 禁止 Ctrl+Shift+J（開發者工具）
+            if (e.ctrlKey && e.shiftKey && e.key === 'J') {{
+                e.preventDefault();
+                return false;
+            }}
+            // 禁止 Ctrl+U（查看原始碼）
+            if (e.ctrlKey && e.key === 'U') {{
+                e.preventDefault();
+                return false;
+            }}
+            // 禁止 Ctrl+S（儲存頁面）
+            if (e.ctrlKey && e.key === 'S') {{
+                e.preventDefault();
+                return false;
             }}
         }});
 

@@ -18,15 +18,15 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from utils.logger import debug_console, info_console, error_console, warning_console
-from utils.file_utils import safe_path_join
+from utils.file_utils import safe_path_join, resolve_relative_path
 
 def extract_video_info(url, root_dir):
     """提取影片資訊"""
     try:
         info_console(f"開始提取影片資訊: {url}")
         
-        # 設定 FFMPEG 路徑
-        ffmpeg_path = os.path.join(root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
+        # 設定 FFMPEG 路徑（使用相對路徑）
+        ffmpeg_path = safe_path_join(root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
         debug_console(f"ffmpeg 路徑: {ffmpeg_path}")
         debug_console(f"ffmpeg 存在: {os.path.exists(ffmpeg_path)}")
         
@@ -75,7 +75,8 @@ def extract_video_info(url, root_dir):
         for f in info_dict.get('formats', []) or []:
             h = f.get('height')
             w = f.get('width')
-            if h and h not in seen_heights:
+            # 過濾掉低於360p的畫質選項
+            if h and h >= 360 and h not in seen_heights:
                 ratio = ''
                 if w and h:
                     g = gcd(w, h)

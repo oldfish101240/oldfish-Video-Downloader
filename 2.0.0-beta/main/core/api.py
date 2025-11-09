@@ -13,7 +13,7 @@ import yt_dlp
 from PySide6.QtCore import QObject, Slot, Signal
 from PySide6.QtWidgets import QFileDialog
 from utils.logger import debug_console, info_console, error_console, warning_console
-from utils.file_utils import safe_path_join
+from utils.file_utils import safe_path_join, get_download_path, resolve_relative_path
 from utils.version_utils import compare_versions
 from config.settings import SettingsManager
 from core.video_info import extract_video_info
@@ -26,6 +26,8 @@ class Api(QObject):
     eval_js_requested = Signal(str)
     infoReady = Signal('QVariant')
     infoError = Signal(str)
+    notificationRequested = Signal(str, str)
+    updateDialogRequested = Signal('QVariant')  # 更新對話框請求信號
     
     def __init__(self, page, root_dir):
         super().__init__()
@@ -37,6 +39,8 @@ class Api(QObject):
         self._lock = threading.Lock()
         self.task_has_postprocessing = {}
         self.task_in_postprocessing = {}
+        self.task_download_paths = {}  # 追蹤每個任務的下載路徑
+        self.notification_handler = None
         
         # 初始化組件
         self.settings_manager = SettingsManager(root_dir)
@@ -48,6 +52,39 @@ class Api(QObject):
         
         # 連接信號
         self.eval_js_requested.connect(self._on_eval_js_requested)
+        self.notificationRequested.connect(self._on_notification_requested)
+        self.updateDialogRequested.connect(self._on_update_dialog_requested)
+    def set_notification_handler(self, handler):
+        """設定通知處理器，由主視窗提供"""
+        self.notification_handler = handler
+    
+    def _format_eta(self, eta_seconds):
+        """格式化 ETA（預估剩餘時間）"""
+        try:
+            if eta_seconds is None or eta_seconds < 0:
+                return ''
+            
+            eta_seconds = int(eta_seconds)
+            
+            if eta_seconds < 60:
+                return f"{eta_seconds}秒"
+            elif eta_seconds < 3600:
+                minutes = eta_seconds // 60
+                seconds = eta_seconds % 60
+                if seconds > 0:
+                    return f"{minutes}分{seconds}秒"
+                else:
+                    return f"{minutes}分鐘"
+            else:
+                hours = eta_seconds // 3600
+                minutes = (eta_seconds % 3600) // 60
+                if minutes > 0:
+                    return f"{hours}小時{minutes}分鐘"
+                else:
+                    return f"{hours}小時"
+        except Exception:
+            return ''
+
     
     @Slot(str, result=str)
     def start_get_video_info(self, url):
@@ -73,8 +110,8 @@ class Api(QObject):
             # 直接使用 yt-dlp 獲取資訊，與原始版本一致
             import yt_dlp
             
-            # 設定 FFMPEG 路徑
-            ffmpeg_path = os.path.join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
+            # 設定 FFMPEG 路徑（使用相對路徑）
+            ffmpeg_path = safe_path_join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
             debug_console(f"[API] ffmpeg 路徑: {ffmpeg_path}")
             debug_console(f"[API] ffmpeg 存在: {os.path.exists(ffmpeg_path)}")
             
@@ -183,31 +220,80 @@ class Api(QObject):
         except Exception as e:
             error_console(f"JavaScript執行失敗: {e}")
     
+    def _on_update_dialog_requested(self, version_info):
+        """處理更新對話框請求（在主線程中執行）"""
+        try:
+            # 使用 QTimer 延遲執行，確保頁面加載完成
+            from PySide6.QtCore import QTimer
+            def show_dialog():
+                self.show_update_dialog(version_info)
+                current_version = version_info.get('current_version', '')
+                latest_version = version_info.get('latest_version', '')
+                info_console(f"已顯示 yt-dlp 更新對話框（目前版本: {current_version}, 最新版本: {latest_version}）")
+            QTimer.singleShot(500, show_dialog)  # 500ms 後執行
+        except Exception as e:
+            error_console(f"顯示更新對話框失敗: {e}")
+    
     def _download_progress_hook(self, task_id, d):
         """下載進度回調"""
-        if d['status'] == 'downloading':
-            if d.get('total_bytes'):
-                percent = d['downloaded_bytes'] / d['total_bytes'] * 100
-                status = "下載中"
-            elif d.get('total_bytes_estimate'):
-                percent = d['downloaded_bytes'] / d['total_bytes_estimate'] * 100
-                status = "下載中 (預估)"
-            else:
-                percent = 0
-                status = "下載中 (未知進度)"
-            info_console(f"[進度] 任務{task_id}: {percent:.1f}% - {status}")
-            # 傳遞當前檔案路徑（若可得）以保持與舊版一致
-            file_arg = d.get('filename') or ''
-            safe_file_arg = (file_arg or '').replace('\\', '/')
-            self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status, '', safe_file_arg)
-        elif d['status'] == 'finished':
-            try:
-                info_console(f"任務 {task_id} 已完成")
+        try:
+            status_key = d.get('status')
+            if not status_key:
+                debug_console(f"【任務{task_id}】進度回調缺少 status 欄位")
+                return
+            
+            if status_key == 'downloading':
+                downloaded_bytes = d.get('downloaded_bytes', 0)
+                
+                # 計算進度百分比
+                if d.get('total_bytes'):
+                    total_bytes = d['total_bytes']
+                    if total_bytes > 0:
+                        percent = min(100, max(0, downloaded_bytes / total_bytes * 100))
+                        status = "下載中"
+                    else:
+                        percent = 0
+                        status = "下載中 (未知進度)"
+                elif d.get('total_bytes_estimate'):
+                    total_bytes_estimate = d['total_bytes_estimate']
+                    if total_bytes_estimate > 0:
+                        percent = min(100, max(0, downloaded_bytes / total_bytes_estimate * 100))
+                        status = "下載中 (預估)"
+                    else:
+                        percent = 0
+                        status = "下載中 (未知進度)"
+                else:
+                    percent = 0
+                    status = "下載中 (未知進度)"
+                
+                # 提取並格式化 ETA（預估剩餘時間）
+                eta = d.get('eta')
+                if eta is not None and isinstance(eta, (int, float)) and eta >= 0:
+                    eta_str = self._format_eta(eta)
+                    if eta_str:
+                        status = f"{status} - 剩餘 {eta_str}"
+                
+                info_console(f"[進度] 任務{task_id}: {percent:.1f}% - {status}")
+                # 傳遞當前檔案路徑（若可得）以保持與舊版一致
                 file_arg = d.get('filename') or ''
                 safe_file_arg = (file_arg or '').replace('\\', '/')
-                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file_arg)
-            except Exception as e:
-                error_console(f"完成進度回報失敗: {e}")
+                # 傳遞 status（已包含 ETA）給前端
+                self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status, '', safe_file_arg)
+            elif status_key == 'finished':
+                try:
+                    info_console(f"任務 {task_id} 已完成")
+                    file_arg = d.get('filename') or ''
+                    safe_file_arg = (file_arg or '').replace('\\', '/')
+                    self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file_arg)
+                except Exception as e:
+                    error_console(f"完成進度回報失敗: {e}")
+            else:
+                # 處理其他未知狀態
+                debug_console(f"【任務{task_id}】未知狀態: {status_key}")
+        except KeyError as e:
+            error_console(f"【任務{task_id}】進度回調缺少必要欄位: {e}")
+        except Exception as e:
+            error_console(f"【任務{task_id}】進度回調處理失敗: {e}")
     
     def _notify_download_complete_safely(self, task_id, url, error=None, file_path=None):
         """安全地通知下載完成"""
@@ -220,6 +306,12 @@ class Api(QObject):
             if error:
                 self._safe_eval_js("window.onDownloadError", task_id, error)
             else:
+                # 記錄最終檔案路徑到任務追蹤中
+                if file_path:
+                    with self._lock:
+                        self.task_download_paths[str(task_id)] = file_path
+                    debug_console(f"任務 {task_id} 最終檔案路徑已記錄: {file_path}")
+                
                 # 與舊版一致，將最終檔案路徑傳給前端以啟用「開啟資料夾」按鈕
                 safe_file = (file_path or '').replace('\\', '/')
                 self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file)
@@ -228,6 +320,10 @@ class Api(QObject):
                 # 發送通知
                 settings = self.settings_manager.load_settings()
                 if settings.get('enableNotifications', True):
+                    try:
+                        self._safe_eval_js("window.__ofShowToast", "下載完成", f"任務 {task_id} 已完成")
+                    except Exception as toast_err:
+                        debug_console(f"顯示 Toast 失敗: {toast_err}")
                     self._send_notification("下載完成", f"任務 {task_id} 已完成")
                     
         except Exception as e:
@@ -253,6 +349,89 @@ class Api(QObject):
         """下載按鈕被點擊"""
         info_console(f"收到下載請求: {url}")
         return "下載功能尚未實作"
+    
+    def _check_file_exists(self, url, quality, format_type, downloads_dir, add_resolution):
+        """檢查目標文件是否存在，返回文件路徑（如果存在）"""
+        try:
+            # 先獲取視頻信息以確定標題和高度
+            import yt_dlp
+            ffmpeg_path = safe_path_join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
+            ydl_opts = {
+                'quiet': True,
+                'simulate': True,
+                'extract_flat': False,
+                'ffmpeg_location': ffmpeg_path,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(url, download=False)
+            
+            title = info_dict.get('title', '無標題影片')
+            # 清理標題中的非法字符
+            import re
+            safe_title = re.sub(r'[<>:"/\\|?*]', '', title)
+            
+            # 規範化格式和畫質
+            fmt = (format_type or '').strip().lower()
+            if fmt in ('mp3', 'aac', 'flac', 'wav', 'audio'):
+                normalized_format = '音訊'
+                ext = 'mp3'
+            else:
+                normalized_format = '影片'
+                ext = 'mp4'
+            
+            q = (quality or '').strip()
+            import re as re_module
+            m = re_module.search(r"(\d+)", q)
+            qnum = m.group(1) if m else ('320' if normalized_format == '音訊' else '1080')
+            
+            # 構建可能的文件名列表（因為 yt-dlp 可能會使用不同的格式）
+            possible_files = []
+            
+            # 獲取實際高度（用於影片）
+            height = None
+            if normalized_format == '影片':
+                formats = info_dict.get('formats', [])
+                for f in formats:
+                    h = f.get('height')
+                    if h and h >= int(qnum):
+                        height = h
+                        break
+                if not height:
+                    height = qnum
+            
+            # 根據設定構建可能的文件名
+            if add_resolution:
+                if normalized_format == '音訊':
+                    # 音訊格式：標題_320kbps.mp3
+                    possible_files.append(f"{safe_title}_{qnum}kbps.{ext}")
+                else:
+                    # 影片格式：標題_1080p.mp4
+                    possible_files.append(f"{safe_title}_{height}p.{ext}")
+            else:
+                # 預設格式：標題.mp4
+                possible_files.append(f"{safe_title}.{ext}")
+            
+            # 檢查文件是否存在（包括不同的擴展名）
+            for filename in possible_files:
+                file_path = os.path.join(downloads_dir, filename)
+                if os.path.exists(file_path):
+                    return file_path
+            
+            # 也檢查其他可能的擴展名（mp4, mkv, webm等）
+            if normalized_format == '影片':
+                for ext_alt in ['mp4', 'mkv', 'webm', 'flv']:
+                    if add_resolution:
+                        alt_path = os.path.join(downloads_dir, f"{safe_title}_{height}p.{ext_alt}")
+                    else:
+                        alt_path = os.path.join(downloads_dir, f"{safe_title}.{ext_alt}")
+                    if os.path.exists(alt_path):
+                        return alt_path
+            
+            return None
+        except Exception as e:
+            debug_console(f"檢查文件是否存在時出錯: {e}")
+            return None
     
     @Slot(int, str, str, str, result=str)
     def start_download(self, task_id, url, quality, format_type):
@@ -287,27 +466,180 @@ class Api(QObject):
             add_resolution = settings.get('addResolutionToFilename', False)
             
             # 決定下載目錄
-            if custom_path and os.path.exists(custom_path):
-                resolved_download_dir = custom_path
-                info_console(f"使用自訂下載路徑: {resolved_download_dir}")
-            else:
-                resolved_download_dir = os.path.join(self.root_dir, 'downloads')
-                info_console(f"使用預設下載路徑: {resolved_download_dir}")
+            resolved_download_dir = get_download_path(self.root_dir, self.settings_manager)
+            info_console(f"使用下載路徑: {resolved_download_dir}")
             
             try:
                 os.makedirs(resolved_download_dir, exist_ok=True)
             except Exception as e:
                 error_console(f"創建下載資料夾失敗，改用預設: {e}")
-                resolved_download_dir = os.path.join(self.root_dir, 'downloads')
+                resolved_download_dir = safe_path_join(self.root_dir, 'downloads')
                 os.makedirs(resolved_download_dir, exist_ok=True)
 
+            # 檢查文件是否已存在
+            existing_file = self._check_file_exists(url, normalized_quality, normalized_format, 
+                                                   resolved_download_dir, add_resolution)
+            if existing_file:
+                # 文件已存在，返回特殊狀態讓前端顯示確認對話框
+                debug_console(f"發現已存在的文件: {existing_file}")
+                # 將信息存儲在臨時變量中，等待用戶確認
+                with self._lock:
+                    if not hasattr(self, '_pending_downloads'):
+                        self._pending_downloads = {}
+                    self._pending_downloads[str(task_id)] = {
+                        'url': url,
+                        'quality': normalized_quality,
+                        'format': normalized_format,
+                        'original_format': fmt,  # 保留原始格式（如 mp3, mp4）
+                        'downloads_dir': resolved_download_dir,
+                        'add_resolution': add_resolution,
+                        'existing_file': existing_file
+                    }
+                return f"FILE_EXISTS:{existing_file}"
+
+            # 記錄任務的下載路徑
+            with self._lock:
+                self.task_download_paths[str(task_id)] = resolved_download_dir
+            
+            debug_console(f"任務 {task_id} 下載路徑已記錄: {resolved_download_dir}")
+
+            # 傳遞原始格式（如 mp3, mp4）給下載器
             self.downloader.start_download(task_id, url, normalized_quality, normalized_format, 
                                          downloads_dir=resolved_download_dir, 
-                                         add_resolution_to_filename=add_resolution)
+                                         add_resolution_to_filename=add_resolution,
+                                         original_format=fmt)
             return "下載已開始"
         except Exception as e:
             error_console(f"開始下載失敗: {e}")
             return f"下載失敗: {e}"
+    
+    @Slot(int, bool, result=str)
+    def confirm_redownload(self, task_id, should_delete):
+        """確認是否重新下載（刪除舊文件）"""
+        try:
+            with self._lock:
+                if not hasattr(self, '_pending_downloads'):
+                    return "沒有待處理的下載任務"
+                
+                pending = self._pending_downloads.get(str(task_id))
+                if not pending:
+                    return "找不到待處理的下載任務"
+                
+                url = pending['url']
+                normalized_quality = pending['quality']
+                normalized_format = pending['format']
+                original_format = pending.get('original_format', None)  # 獲取原始格式
+                resolved_download_dir = pending['downloads_dir']
+                add_resolution = pending['add_resolution']
+                existing_file = pending['existing_file']
+                
+                # 如果用戶確認刪除，刪除舊文件
+                if should_delete:
+                    try:
+                        if os.path.exists(existing_file):
+                            os.remove(existing_file)
+                            info_console(f"已刪除舊文件: {existing_file}")
+                    except Exception as e:
+                        error_console(f"刪除舊文件失敗: {e}")
+                        return f"刪除舊文件失敗: {e}"
+                else:
+                    # 用戶取消，移除待處理任務
+                    del self._pending_downloads[str(task_id)]
+                    return "已取消下載"
+                
+                # 記錄任務的下載路徑
+                self.task_download_paths[str(task_id)] = resolved_download_dir
+                
+                # 開始下載，傳遞原始格式
+                self.downloader.start_download(task_id, url, normalized_quality, normalized_format, 
+                                             downloads_dir=resolved_download_dir, 
+                                             add_resolution_to_filename=add_resolution,
+                                             original_format=original_format)
+                
+                # 移除待處理任務
+                del self._pending_downloads[str(task_id)]
+                
+                return "下載已開始"
+        except Exception as e:
+            error_console(f"確認重新下載失敗: {e}")
+            return f"失敗: {e}"
+
+    @Slot(int, result=str)
+    def open_file_location_by_task(self, task_id):
+        """根據任務ID開啟檔案所在資料夾"""
+        try:
+            if task_id is None:
+                return "任務ID不可用"
+            
+            task_key = str(task_id).strip()
+            if not task_key:
+                return "任務ID不可用"
+            
+            # 從任務追蹤中獲取檔案路徑
+            with self._lock:
+                file_path = self.task_download_paths.get(task_key)
+            
+            if not file_path:
+                return f"找不到任務 {task_key} 的檔案路徑"
+            
+            debug_console(f"任務 {task_id} 的檔案路徑: {file_path}")
+            
+            # 檢查檔案是否存在
+            if os.path.exists(file_path):
+                # 在 Windows 上使用 explorer /select,
+                if sys.platform.startswith('win'):
+                    import subprocess
+                    try:
+                        if os.path.isdir(file_path):
+                            # 如果是資料夾，直接開啟
+                            subprocess.Popen(["explorer", file_path], 
+                                           creationflags=subprocess.CREATE_NO_WINDOW)
+                        else:
+                            # 如果是檔案，使用 /select, 選中檔案
+                            # 注意：/select, 後面必須緊跟路徑，不能有空格
+                            # 使用絕對路徑並確保路徑正確
+                            abs_path = os.path.abspath(file_path)
+                            # 使用 shell=True 確保命令正確執行
+                            subprocess.Popen(f'explorer /select,"{abs_path}"', 
+                                           shell=True,
+                                           creationflags=subprocess.CREATE_NO_WINDOW)
+                        debug_console(f"已執行 explorer 命令開啟: {file_path}")
+                        return "已開啟檔案位置"
+                    except Exception as e:
+                        error_console(f"開啟檔案位置失敗: {e}")
+                        # 嘗試開啟所在資料夾
+                        try:
+                            folder = os.path.dirname(file_path)
+                            subprocess.Popen(["explorer", folder], 
+                                           creationflags=subprocess.CREATE_NO_WINDOW)
+                            return "已開啟資料夾"
+                        except Exception as e2:
+                            error_console(f"開啟資料夾也失敗: {e2}")
+                            return f"開啟失敗: {e2}"
+                else:
+                    # 其他平台開啟所在資料夾
+                    folder = os.path.dirname(file_path)
+                    import subprocess
+                    subprocess.Popen(["xdg-open", folder])
+                    return "已開啟資料夾"
+            else:
+                # 檔案不存在，嘗試開啟所在資料夾
+                folder = os.path.dirname(file_path)
+                if os.path.exists(folder):
+                    if sys.platform.startswith('win'):
+                        import subprocess
+                        subprocess.Popen(["explorer", folder], 
+                                       creationflags=subprocess.CREATE_NO_WINDOW)
+                        return "檔案不存在，已開啟所在資料夾"
+                    else:
+                        import subprocess
+                        subprocess.Popen(["xdg-open", folder])
+                        return "檔案不存在，已開啟所在資料夾"
+                return f"檔案不存在: {file_path}"
+                
+        except Exception as e:
+            error_console(f"根據任務ID開啟檔案位置失敗: {e}")
+            return f"失敗: {e}"
 
     @Slot(str, result=str)
     def open_file_location(self, file_path):
@@ -319,21 +651,52 @@ class Api(QObject):
             # 統一分隔符並清理路徑
             fp = str(file_path).strip().replace('/', os.sep)
             
-            # 驗證檔案路徑安全性
+            # 如果檔案路徑是相對路徑，嘗試在設定檔的下載路徑中尋找
+            if not os.path.isabs(fp):
+                # 獲取設定檔中的自訂下載路徑
+                settings = self.settings_manager.load_settings()
+                custom_path = settings.get('customDownloadPath', '')
+                
+                # 優先使用設定檔中的路徑
+                if custom_path and os.path.exists(custom_path):
+                    # 在自訂路徑中尋找檔案
+                    custom_file_path = os.path.join(custom_path, fp)
+                    if os.path.exists(custom_file_path):
+                        fp = custom_file_path
+                        debug_console(f"在自訂路徑中找到檔案: {fp}")
+                    else:
+                        # 如果自訂路徑中找不到，嘗試預設下載路徑
+                        default_file_path = os.path.join(self.root_dir, 'downloads', fp)
+                        if os.path.exists(default_file_path):
+                            fp = default_file_path
+                            debug_console(f"在預設路徑中找到檔案: {fp}")
+                        else:
+                            # 最後嘗試相對於根目錄的路徑
+                            fp = os.path.join(self.root_dir, fp)
+                else:
+                    # 如果沒有自訂路徑，嘗試預設下載路徑
+                    default_file_path = os.path.join(self.root_dir, 'downloads', fp)
+                    if os.path.exists(default_file_path):
+                        fp = default_file_path
+                        debug_console(f"在預設路徑中找到檔案: {fp}")
+                    else:
+                        # 最後嘗試相對於根目錄的路徑
+                        fp = os.path.join(self.root_dir, fp)
+            else:
+                # 絕對路徑，檢查是否在允許範圍內
+                if not fp.startswith(self.root_dir) and not fp.startswith(os.path.expanduser("~")):
+                    return "檔案路徑不在允許範圍內"
+            
+            # 確保路徑是絕對路徑
             if not os.path.isabs(fp):
                 fp = os.path.abspath(fp)
-            
-            # 檢查路徑是否在允許的範圍內（防止目錄遍歷攻擊）
-            if not fp.startswith(self.root_dir) and not fp.startswith(os.path.expanduser("~")):
-                return "檔案路徑不在允許範圍內"
             
             if os.path.exists(fp):
                 # 在 Windows 上使用 explorer /select,
                 if sys.platform.startswith('win'):
                     import subprocess
-                    # 使用引號包圍路徑以防止特殊字符問題
-                    escaped_path = f'"{fp}"'
-                    subprocess.Popen(["explorer", "/select,", escaped_path])
+                    # 直接傳遞路徑給 explorer，由 subprocess 處理跳脫
+                    subprocess.Popen(["explorer", "/select,", fp])
                     return "已開啟檔案位置"
                 else:
                     # 其他平台開啟所在資料夾
@@ -448,11 +811,19 @@ class Api(QObject):
     def _send_notification(self, title, message):
         """發送通知"""
         try:
-            # 這裡可以實現各種通知方式
-            # 目前使用簡單的調試輸出
-            debug_console(f"通知: {title} - {message}")
+            self.notificationRequested.emit(title or '', message or '')
         except Exception as e:
             debug_console(f"發送通知失敗: {e}")
+
+    def _on_notification_requested(self, title, message):
+        """在主執行緒處理通知"""
+        try:
+            if callable(self.notification_handler):
+                self.notification_handler(title or '', message or '')
+            else:
+                debug_console(f"通知: {title} - {message}")
+        except Exception as e:
+            debug_console(f"通知處理失敗: {e}")
     
     @Slot(result=str)
     def check_ytdlp_version(self):
@@ -526,6 +897,44 @@ class Api(QObject):
             error_console(f"檢查版本失敗: {e}")
             return "未知版本"
     
+    @Slot(result=str)
+    def refresh_version(self):
+        """重新整理版本號顯示"""
+        try:
+            # 動態重新導入模組以獲取最新版本號
+            import importlib
+            import config.constants
+            importlib.reload(config.constants)
+            from config.constants import APP_VERSION, APP_VERSION_HOME
+            
+            # 更新版本號顯示
+            version_script = f"""
+            (function(){{
+                try {{
+                    window.__APP_VERSION = '{APP_VERSION}';
+                    window.__APP_VERSION_HOME = '{APP_VERSION_HOME}';
+                    
+                    var versionTag = document.getElementById('version-tag');
+                    if (versionTag) {{
+                        versionTag.textContent = '{APP_VERSION_HOME}';
+                    }}
+                    
+                    var aboutVersion = document.getElementById('about-version');
+                    if (aboutVersion) {{
+                        aboutVersion.textContent = '{APP_VERSION}';
+                    }}
+                }} catch(e) {{
+                    console.error('更新版本號失敗:', e);
+                }}
+            }})();
+            """
+            
+            self._eval_js(version_script)
+            return f"版本號已更新為: {APP_VERSION_HOME}"
+        except Exception as e:
+            error_console(f"重新整理版本號失敗: {e}")
+            return f"更新失敗: {e}"
+
     @Slot(result=str)
     def restart_app(self):
         """重啟應用程式（舊版等價：優先重啟打包 exe，否則重啟腳本）"""
@@ -708,7 +1117,9 @@ class Api(QObject):
                         'current_version': current_version,
                         'latest_version': latest
                     }
-                    self.show_update_dialog(version_info)
+                    # 使用信號在主線程中顯示對話框（因為 check_and_update_ytdlp 在後台線程執行）
+                    info_console(f"發現 yt-dlp 新版本（目前版本: {current_version}, 最新版本: {latest}），準備顯示更新對話框")
+                    self.updateDialogRequested.emit(version_info)
             return current_version
         except Exception as e:
             debug_console(f"版本檢查失敗: {e}")
@@ -811,7 +1222,7 @@ class Api(QObject):
                         flags |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
                     except Exception:
                         si = None
-                with subprocess.Popen(
+                proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -819,14 +1230,18 @@ class Api(QObject):
                     bufsize=1,
                     startupinfo=si,
                     creationflags=flags,
-                ) as proc:
+                )
+                try:
                     import time
                     progress = 3
                     last_emit = 0.0
+                    output_lines = []
                     for line in proc.stdout:
                         ln = (line or '').strip()
                         if not ln:
                             continue
+                        output_lines.append(ln)
+                        debug_console(f"pip 輸出: {ln}")
                         lower = ln.lower()
                         if 'collecting' in lower or 'downloading' in lower:
                             self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(undefined, '正在下載套件…');")
@@ -841,12 +1256,74 @@ class Api(QObject):
                             progress = min(progress + 1, 97)
                             self._eval_js(f"window.__ofUpdateProgress && window.__ofUpdateProgress({progress}, undefined);")
                             last_emit = now
+                    
+                    # 等待進程完成
                     ret = proc.wait()
+                    output_text = '\n'.join(output_lines)
+                    debug_console(f"pip 更新完成，返回碼: {ret}")
+                    debug_console(f"pip 輸出內容: {output_text[:500]}")  # 只記錄前500字符
+                    
                     if ret == 0:
-                        self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
-                        self._eval_js("window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 已成功更新到最新版本！');")
+                        # 驗證更新是否成功：檢查當前版本
+                        try:
+                            # 重新加載 yt-dlp 模組以使用新版本
+                            import importlib
+                            
+                            # 檢查 yt-dlp 的實際安裝路徑
+                            python_embed_path = safe_path_join(self.root_dir, 'python_embed')
+                            if python_embed_path not in sys.path:
+                                sys.path.insert(0, python_embed_path)
+                            
+                            # 清除模組緩存，強制重新加載
+                            modules_to_remove = [k for k in sys.modules.keys() if k.startswith('yt_dlp')]
+                            for mod_name in modules_to_remove:
+                                del sys.modules[mod_name]
+                            
+                            # 重新導入 yt_dlp 模組
+                            import yt_dlp
+                            # 更新全局引用
+                            globals()['yt_dlp'] = yt_dlp
+                            
+                            # 檢查模組實際路徑
+                            yt_dlp_path = yt_dlp.__file__ if hasattr(yt_dlp, '__file__') else 'unknown'
+                            debug_console(f"yt-dlp 模組路徑: {yt_dlp_path}")
+                            
+                            new_version = yt_dlp.version.__version__
+                            info_console(f"更新後 yt-dlp 版本: {new_version}")
+                            
+                            # 檢查是否真的安裝了新版本
+                            was_updated = 'successfully installed' in output_text.lower()
+                            is_latest = 'already satisfied' in output_text.lower()
+                            
+                            if was_updated:
+                                # 真的更新了
+                                self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
+                                self._eval_js(f"window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 已成功更新到最新版本！\\n\\n目前版本: {new_version}');")
+                            elif is_latest:
+                                # 已經是最新版本
+                                self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '檢查完成');")
+                                self._eval_js(f"window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 已經是最新版本！\\n\\n目前版本: {new_version}');")
+                            else:
+                                # 其他情況
+                                self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
+                                self._eval_js(f"window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 已更新！\\n\\n目前版本: {new_version}');")
+                        except Exception as verify_err:
+                            error_console(f"驗證更新版本失敗: {verify_err}")
+                            import traceback
+                            error_console(traceback.format_exc())
+                            self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
+                            self._eval_js("window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 更新完成，請重新啟動應用程式以確保新版本生效。');")
                     else:
+                        error_console(f"pip 更新失敗，返回碼: {ret}")
+                        error_console(f"pip 錯誤輸出: {output_text[-500:]}")  # 只記錄最後500字符
                         self._eval_js("window.__ofUpdateDone && window.__ofUpdateDone(false, 'yt-dlp 更新失敗，請稍後再試或手動更新。');")
+                finally:
+                    # 確保進程資源被釋放
+                    if proc.stdout:
+                        proc.stdout.close()
+                    if proc.poll() is None:
+                        proc.terminate()
+                        proc.wait()
             except Exception as e:
                 error_console(f"更新執行失敗: {e}")
                 safe_msg = str(e).replace('\\', '/')
@@ -856,8 +1333,10 @@ class Api(QObject):
     def show_update_dialog(self, version_info):
         """顯示更新對話框（完全對齊舊版樣式與互動）"""
         try:
+            # 確保在頁面加載完成後執行
             # 注入舊版的進度對話與完成對話
             update_js = """
+            if (typeof window.__executeUpdate === 'undefined') {
             window.__executeUpdate = function() {
                 const progressOverlay = document.createElement('div');
                 progressOverlay.id = 'update-progress-overlay';
@@ -925,13 +1404,16 @@ class Api(QObject):
                 };
                 try { window.api.startYtDlpUpdate(); } catch (e) { console.error(e); }
             };
+            }
             """
             self._eval_js(update_js)
 
             # 再注入舊版對話框，帶入具體版本號
             current_version = version_info.get('current_version', '')
             latest_version = version_info.get('latest_version', '')
+            # 使用 setTimeout 確保在頁面加載完成後執行
             dialog_html = """
+            setTimeout(function() {
             (function() {
                 const overlay = document.createElement('div');
                 overlay.id = 'update-dialog-overlay';
@@ -989,9 +1471,15 @@ class Api(QObject):
                 skipBtn.addEventListener('click', function(){ overlay.remove(); });
                 overlay.addEventListener('click', function(e){ if (e.target === this) { this.remove(); if (window.__onUpdateDialogResult) { window.__onUpdateDialogResult('skip'); } } });
             })();
+            }, 100);
             """
             dialog_html = dialog_html.replace("__CURR__", str(current_version).replace('\\', '/')).replace("__LATEST__", str(latest_version).replace('\\', '/'))
-            self._eval_js(dialog_html)
+            # 使用 runJavaScript 直接執行，確保立即顯示
+            try:
+                self.page.runJavaScript(dialog_html)
+            except Exception as js_err:
+                debug_console(f"直接執行 JavaScript 失敗，使用信號: {js_err}")
+                self._eval_js(dialog_html)
             return "update"
         except Exception as e:
             debug_console(f"注入更新對話框失敗: {e}")

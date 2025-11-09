@@ -22,26 +22,49 @@ def ensure_directories(root_dir):
 
 def safe_path_join(*paths):
     """安全地連接路徑，處理相對路徑和絕對路徑"""
-    try:
-        # 過濾掉空字串和 None
-        valid_paths = [p for p in paths if p and p.strip()]
-        if not valid_paths:
-            return ""
-        
-        # 如果第一個路徑是絕對路徑，從它開始
-        if os.path.isabs(valid_paths[0]):
-            result = valid_paths[0]
-            for path in valid_paths[1:]:
-                result = os.path.join(result, path)
-        else:
-            # 否則使用 os.path.join 正常連接
-            result = os.path.join(*valid_paths)
-        
-        # 正規化路徑
-        return os.path.normpath(result)
-    except Exception as e:
-        error_console(f"路徑連接失敗: {e}")
+    if not paths:
         return ""
+    
+    # 過濾掉空路徑
+    valid_paths = [str(p) for p in paths if p]
+    if not valid_paths:
+        return ""
+    
+    # 使用 os.path.join 連接路徑
+    result = os.path.join(*valid_paths)
+    
+    # 正規化路徑（處理 .. 和 . 等）
+    result = os.path.normpath(result)
+    
+    return result
+
+def resolve_relative_path(path, root_dir):
+    """解析相對路徑為絕對路徑，相對於根目錄"""
+    if not path:
+        return ""
+    
+    # 如果是絕對路徑，直接返回
+    if os.path.isabs(path):
+        return path
+    
+    # 相對路徑，相對於根目錄
+    return os.path.join(root_dir, path)
+
+def get_download_path(root_dir, settings_manager):
+    """獲取下載路徑，優先使用設定檔中的路徑"""
+    try:
+        settings = settings_manager.load_settings()
+        custom_path = settings.get('customDownloadPath', '')
+        
+        # 如果有自訂路徑且存在，使用自訂路徑
+        if custom_path and os.path.exists(custom_path):
+            return custom_path
+        
+        # 否則使用預設路徑
+        return safe_path_join(root_dir, 'downloads')
+    except Exception as e:
+        # 發生錯誤時回退到預設路徑
+        return safe_path_join(root_dir, 'downloads')
 
 def get_assets_path(root_dir):
     """獲取資源檔案路徑"""

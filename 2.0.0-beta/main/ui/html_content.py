@@ -7,9 +7,10 @@ HTML 內容模組 - 完整版本
 def get_html_content():
     """獲取完整的 HTML 內容"""
     import os
+    from utils.file_utils import safe_path_join
     
-    # 優先載入 main.html 檔案
-    html_file = os.path.join(os.path.dirname(__file__), '..', 'main.html')
+    # 優先載入 main.html 檔案（使用相對路徑）
+    html_file = safe_path_join(os.path.dirname(__file__), '..', 'main.html')
     if os.path.exists(html_file):
         try:
             with open(html_file, 'r', encoding='utf-8') as f:

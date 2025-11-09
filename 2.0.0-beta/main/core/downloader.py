@@ -8,7 +8,7 @@ import os
 import threading
 import yt_dlp
 from utils.logger import debug_console, info_console, error_console, warning_console
-from utils.file_utils import safe_path_join
+from utils.file_utils import safe_path_join, resolve_relative_path
 
 class Downloader:
     """下載器類別"""
@@ -21,14 +21,14 @@ class Downloader:
         self.active_downloads = {}
         self._lock = threading.Lock()
     
-    def start_download(self, task_id, url, quality, format_type, downloads_dir=None, add_resolution_to_filename=False):
+    def start_download(self, task_id, url, quality, format_type, downloads_dir=None, add_resolution_to_filename=False, original_format=None):
         """開始下載"""
         def download_task():
             try:
                 info_console(f"【任務{task_id}】開始下載: {url}")
                 
                 # 設定下載選項
-                ydl_opts = self._build_download_options(quality, format_type, downloads_dir, add_resolution_to_filename)
+                ydl_opts = self._build_download_options(quality, format_type, downloads_dir, add_resolution_to_filename, original_format)
                 
                 # 設定進度回調（注入 task_id，便於前端對應）
                 last_filename = {'path': ''}
@@ -70,10 +70,10 @@ class Downloader:
         with self._lock:
             self.active_downloads[task_id] = thread
     
-    def _build_download_options(self, quality, format_type, downloads_dir=None, add_resolution_to_filename=False):
+    def _build_download_options(self, quality, format_type, downloads_dir=None, add_resolution_to_filename=False, original_format=None):
         """建構下載選項"""
-        # 設定 FFMPEG 路徑
-        ffmpeg_path = os.path.join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
+        # 設定 FFMPEG 路徑（使用相對路徑）
+        ffmpeg_path = safe_path_join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
         # 解析下載目錄
         target_dir = downloads_dir or self.downloads_dir
         try:
@@ -94,17 +94,26 @@ class Downloader:
         except Exception:
             qnum = qval or '1080'
 
-        # 根據設定決定檔名模板
+        # 使用用戶選擇的原始格式作為擴展名（如 mp3, mp4, mkv, webm 等）
+        # 如果沒有提供原始格式，則根據格式類型推斷
+        if original_format:
+            file_ext = original_format.strip().lower()
+        elif fmt_type == "音訊":
+            file_ext = 'mp3'  # 預設音訊格式
+        else:
+            file_ext = 'mp4'  # 預設影片格式
+
+        # 根據設定決定檔名模板，使用用戶選擇的格式作為擴展名
         if add_resolution_to_filename:
             if fmt_type == "音訊":
-                # 音訊格式：標題_320kbps.mp3（使用自定義位元率）
-                outtmpl = os.path.join(target_dir, f'%(title)s_{qnum}kbps.%(ext)s')
+                # 音訊格式：標題_320kbps.{用戶選擇的格式}
+                outtmpl = os.path.join(target_dir, f'%(title)s_{qnum}kbps.{file_ext}')
             else:
-                # 影片格式：標題_1080p.mp4
-                outtmpl = os.path.join(target_dir, '%(title)s_%(height)sp.%(ext)s')
+                # 影片格式：標題_1080p.{用戶選擇的格式}
+                outtmpl = os.path.join(target_dir, f'%(title)s_%(height)sp.{file_ext}')
         else:
-            # 預設格式：標題.mp4
-            outtmpl = os.path.join(target_dir, '%(title)s.%(ext)s')
+            # 使用用戶選擇的格式作為擴展名
+            outtmpl = os.path.join(target_dir, f'%(title)s.{file_ext}')
 
         ydl_opts = {
             'outtmpl': outtmpl,
@@ -115,11 +124,13 @@ class Downloader:
         
         # 根據格式類型設定額外選項
         if fmt_type == "音訊":
+            # 使用用戶選擇的音訊格式作為 codec（如 mp3, aac, flac, wav）
+            audio_codec = original_format.strip().lower() if original_format else 'mp3'
             ydl_opts.update({
                 'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
+                    'preferredcodec': audio_codec,
                     # 音訊位元率使用純數字，如 '320'
                     'preferredquality': str(qnum or '320'),
                 }],
