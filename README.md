@@ -13,7 +13,8 @@
 ![last-commit](https://img.shields.io/github/last-commit/oldfish101240/oldfish-Video-Downloader.svg)
 
 
-
+### ❗下方的介紹是為v1製作❗
+v2的介紹敬請期待
 </div>
 
 ## 目錄
