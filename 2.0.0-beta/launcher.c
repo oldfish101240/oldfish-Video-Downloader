@@ -89,8 +89,14 @@ void get_app_path(char* path, size_t size) {
         // 移除檔案名稱，只保留目錄
         char* last_slash = strrchr(path, '\\');
         if (last_slash) {
-            *(last_slash + 1) = '\0';
+            *last_slash = '\0';  // 移除最後的反斜線，避免路徑結尾有反斜線
         }
+    }
+    
+    // 確保路徑不以反斜線結尾
+    size_t len = strlen(path);
+    if (len > 0 && path[len - 1] == '\\') {
+        path[len - 1] = '\0';
     }
 }
 
@@ -198,8 +204,13 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     // OutputDebugStringA("launcher: resolved application path\n");
     
     // 構建完整路徑（以隱藏主控台的 main.pyw 為入口）
-    snprintf(pythonw_path, sizeof(pythonw_path), "%s\\main\\python_embed\\pythonw.exe", app_path);
-    snprintf(script_path, sizeof(script_path), "%s\\main\\main.pyw", app_path);
+    // 使用 PathCombineA 確保路徑格式正確
+    char temp_path[MAX_PATH];
+    PathCombineA(temp_path, app_path, "main");
+    PathCombineA(temp_path, temp_path, "python_embed");
+    PathCombineA(pythonw_path, temp_path, "pythonw.exe");
+    PathCombineA(temp_path, app_path, "main");
+    PathCombineA(script_path, temp_path, "main.pyw");
     
     // OutputDebugStringA("launcher: paths ready\n");
     

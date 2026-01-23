@@ -16,6 +16,45 @@
                 new QWebChannel(qt.webChannelTransport, function(channel){
                     window.api = channel.objects.api;
                     window.pywebview = { api: window.api };
+                    
+                    // 初始化回調管理器
+                    console.log('[前端] 初始化回調管理器');
+                    window.__videoInfoCallback = null;
+                    window.__videoInfoErrorCallback = null;
+                    
+                    // 設置全局回調，作為後備處理
+                    window.__onVideoInfo = function(info) {
+                        console.log('[前端] __onVideoInfo 被調用', info);
+                        console.log('[前端] 當前回調函數:', window.__videoInfoCallback ? '已設置' : '未設置');
+                        
+                        if (window.__videoInfoCallback && typeof window.__videoInfoCallback === 'function') {
+                            console.log('[前端] 使用專用回調處理');
+                            try {
+                                window.__videoInfoCallback(info);
+                            } catch (e) {
+                                console.error('[前端] 專用回調執行出錯:', e);
+                            }
+                        } else {
+                            console.warn('[前端] 沒有專用回調，使用默認處理');
+                            // 如果沒有專用回調，嘗試根據資訊類型處理
+                            if (info && info.is_playlist) {
+                                console.log('[前端] 檢測到播放清單資訊，但沒有專用回調');
+                            }
+                        }
+                    };
+                    
+                    window.__onVideoInfoError = function(error) {
+                        console.error('[前端] __onVideoInfoError 被調用:', error);
+                        if (window.__videoInfoErrorCallback && typeof window.__videoInfoErrorCallback === 'function') {
+                            try {
+                                window.__videoInfoErrorCallback(error);
+                            } catch (e) {
+                                console.error('[前端] 錯誤回調執行出錯:', e);
+                            }
+                        }
+                    };
+                    
+                    console.log('[前端] 回調管理器初始化完成');
                 });
             }
             initChannel();
@@ -426,67 +465,81 @@
             border-radius: 16px;
             box-shadow: 0 4px 24px #000a;
             padding: 0;
-            min-width: 420px;
-            max-width: 96vw;
+            min-width: 450px;
+            max-width: 90vw;
             display: flex;
             flex-direction: column;
             align-items: stretch;
             position: relative;
         }
         .video-modal-loading {
-            padding: 48px 48px 32px 48px;
-            font-size: 20px;
+            padding: 24px;
+            font-size: 16px;
             color: #aaa;
             text-align: center;
         }
         .video-modal-header {
             display: flex;
-            align-items: flex-start;
-            padding: 32px 32px 0 32px;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #444;
         }
         .video-modal-thumb {
-            max-height: 70px; /* Adjust thumbnail height to match text content */
-            width: auto; /* Maintain aspect ratio */
+            width: 160px;
+            height: 120px;
             border-radius: 8px;
-            object-fit: cover; /* Ensure the whole image is visible without cropping */
-            margin-right: 18px;
+            object-fit: contain;
+            margin-right: 16px;
             background: #181a20;
-            align-self: flex-start; /* Align to the top within the flex container */
+            flex-shrink: 0;
         }
         .video-modal-titlebox {
             flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start;
+            justify-content: center;
+            min-width: 0;
         }
         .video-modal-title {
-            font-size: 20px;
-            font-weight: bold;
+            font-size: 18px;
+            font-weight: 600;
             color: #e5e7eb;
             margin-bottom: 6px;
             margin-top: 0;
-            word-break: break-all;
+            word-break: break-word;
+            line-height: 1.3;
         }
         .video-modal-meta {
-            font-size: 15px;
+            font-size: 14px;
             color: #aaa;
-            margin-bottom: 2px;
+            margin-bottom: 0;
         }
         .video-modal-uploader {
-            font-size: 15px;
+            font-size: 12px;
             color: #aaa;
-            margin-bottom: 2px;
+            margin-bottom: 0;
         }
         .video-modal-options {
-            padding: 24px 32px 0 32px;
+            padding: 16px 20px;
             display: flex;
             flex-direction: column;
-            gap: 18px;
+            gap: 12px;
+            border-bottom: 1px solid #444;
         }
         .video-modal-label {
-            font-size: 16px;
+            font-size: 13px;
             color: #e5e7eb;
             margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .video-modal-options-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+        }
+        .video-modal-option-item {
+            width: 100%;
         }
         .custom-select {
             position: relative;
@@ -497,16 +550,23 @@
         .custom-select-header {
             width: 100%;
             padding: 8px 12px;
-            border-radius: 8px;
+            border-radius: 6px;
             border: 1px solid #444;
-            background: #23262f;
+            background: #1a1d23;
             color: #e5e7eb;
-            font-size: 15px;
+            font-size: 14px;
             cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-sizing: border-box;
             transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .custom-select-text{
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
         }
         .custom-select-header:hover {
             border-color: #2ecc71;
@@ -551,6 +611,7 @@
             cursor: pointer;
             transition: background-color 0.2s ease;
             border-bottom: 1px solid #333;
+            font-size: 14px;
         }
         .custom-select-option:last-child {
             border-bottom: none;
@@ -653,15 +714,16 @@
             display: flex;
             justify-content: flex-end;
             align-items: center;
-            gap: 16px;
-            padding: 24px 32px 32px 32px;
+            gap: 12px;
+            padding: 16px 20px;
         }
         .video-modal-btn {
             background: #27ae60;
             color: #fff;
             border: none;
-            border-radius: 8px;
-            padding: 10px 20px;
+            border-radius: 6px;
+            padding: 10px 24px;
+            font-size: 15px;
             height: 40px;
             font-size: 16px;
             cursor: pointer;
@@ -682,6 +744,286 @@
         }
         .video-modal-btn.cancel:hover {
             background: #666;
+        }
+
+        /* 播放清單選擇模態視窗樣式 */
+        .playlist-modal-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10001;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .playlist-modal-bg.show {
+            opacity: 1;
+        }
+        .playlist-modal {
+            background: #23262f;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border: 1px solid #444;
+            overflow: hidden;
+        }
+        .playlist-modal-header {
+            padding: 12px 20px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .playlist-modal-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #e5e7eb;
+        }
+        .playlist-modal-subtitle {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 2px;
+        }
+        .playlist-modal-close {
+            background: transparent;
+            border: none;
+            color: #e5e7eb;
+            font-size: 28px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .playlist-modal-close:hover {
+            background: #2b2e37;
+        }
+        .playlist-modal-toolbar {
+            padding: 8px 20px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .playlist-toolbar-btn {
+            background: #2b2e37;
+            color: #e5e7eb;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .playlist-toolbar-btn:hover {
+            background: #2ecc71;
+            border-color: #2ecc71;
+            color: #fff;
+        }
+        .playlist-toolbar-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #e5e7eb;
+            font-size: 13px;
+            user-select: none;
+            padding: 6px 10px;
+            border: 1px solid #444;
+            background: #2b2e37;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+        .playlist-toolbar-check input[type="checkbox"]{
+            width: 16px;
+            height: 16px;
+            accent-color: #2ecc71;
+        }
+        .playlist-toolbar-select {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 10px;
+            border: 1px solid #444;
+            background: #2b2e37;
+            border-radius: 6px;
+        }
+        .playlist-toolbar-select .playlist-toolbar-select-label{
+            color:#aaa;
+            font-size:12px;
+            white-space: nowrap;
+        }
+        .playlist-toolbar-select .custom-select{
+            max-width: none;
+            width: 220px;
+        }
+        .playlist-toolbar-select .custom-select-header{
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+        .custom-select.disabled .custom-select-header{
+            opacity: 0.55;
+            cursor: not-allowed;
+            border-color: #444;
+            background: #1f222a;
+            box-shadow: none;
+        }
+        .custom-select.disabled .custom-select-arrow{
+            opacity: 0.4;
+        }
+        .custom-select.error {
+            animation: shake 0.5s;
+        }
+        .custom-select.error .custom-select-header {
+            border-color: #e74c3c !important;
+            background: rgba(231, 76, 60, 0.1) !important;
+            box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3) !important;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .playlist-modal-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 20px;
+        }
+        .playlist-video-item {
+            background: #1a1d23;
+            border: 1px solid #444;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            transition: all 0.2s;
+        }
+        .playlist-video-item:hover {
+            border-color: #555;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .playlist-video-item.selected {
+            border-color: #2ecc71;
+            background: #1e2a24;
+        }
+        .playlist-video-checkbox {
+            width: 20px;
+            height: 20px;
+            margin-top: 4px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .playlist-video-thumb {
+            width: 100px;
+            height: 75px;
+            border-radius: 6px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: #181a20;
+        }
+        .playlist-video-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .playlist-video-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #e5e7eb;
+            margin-bottom: 4px;
+            word-break: break-word;
+            line-height: 1.3;
+        }
+        .playlist-video-meta {
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 0;
+        }
+        .playlist-video-controls {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+        .playlist-video-select {
+            width: 100px;
+        }
+        .playlist-video-controls .custom-select {
+            width: 100px;
+            position: relative;
+        }
+        .playlist-video-controls .custom-select-header {
+            padding: 5px 8px;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .playlist-video-controls .custom-select-options {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            width: 100%;
+            min-width: 100px;
+            z-index: 10001;
+            max-height: 150px;
+        }
+        .playlist-video-controls .custom-select-option {
+            padding: 6px 8px;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .playlist-modal-footer {
+            padding: 10px 20px;
+            border-top: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .playlist-selected-count {
+            color: #aaa;
+            font-size: 14px;
+        }
+        .playlist-download-btn {
+            background: #27ae60;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .playlist-download-btn:hover {
+            background: #219150;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+        }
+        .playlist-download-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
         }
 
         /* 新增佇列頁面樣式 */
@@ -1272,6 +1614,14 @@
                         </div>
                         <div class="settings-item">
                             <label class="settings-label" style="display: block; margin-bottom: 8px; color: #e5e7eb; font-size: 16px;">
+                                同時下載上限（建議 3~5）：
+                            </label>
+                            <input type="number" id="max-concurrent-downloads" class="settings-input"
+                                   min="1" max="10" step="1"
+                                   style="width: 140px; padding: 10px 12px; border: 1px solid #444; border-radius: 8px; background: #1a1d23; color: #e5e7eb; font-size: 14px;">
+                        </div>
+                        <div class="settings-item">
+                            <label class="settings-label" style="display: block; margin-bottom: 8px; color: #e5e7eb; font-size: 16px;">
                                 下載路徑：
                             </label>
                             <div style="display: flex; gap: 12px; align-items: center;">
@@ -1306,7 +1656,7 @@
                             版本：<span id="about-version">—</span>
                         </div>
                         <div class="settings-item" style="color:#e5e7eb; font-size:15px; margin-bottom:8px;">
-                            發布日期：2025.11.09
+                            發布日期：2025.01.20
                         </div>
                         <div class="settings-item" style="color:#e5e7eb; font-size:15px; margin-bottom:8px;">
                             作者：老魚oldfish
@@ -1358,32 +1708,82 @@
                     <img class="video-modal-thumb" id="video-modal-thumb" src="assets/icon.png" alt="thumb">
                     <div class="video-modal-titlebox">
                         <div class="video-modal-title" id="video-modal-title"></div>
-                        <div class="video-modal-meta" id="video-modal-duration"></div>
-                        <div class="video-modal-uploader" id="video-modal-uploader"></div>
+                        <div class="video-modal-meta" id="video-modal-meta"></div>
                     </div>
                 </div>
                 <div class="video-modal-options">
-                    <div class="video-modal-label" id="video-modal-quality-label">影片畫質</div>
-                    <div class="custom-select" id="quality-select">
-                        <div class="custom-select-header" onclick="toggleSelect('quality-select')">
-                            <span class="custom-select-text">請選擇畫質</span>
-                            <div class="custom-select-arrow"></div>
+                    <div class="video-modal-options-wrapper">
+                        <div class="video-modal-option-item">
+                            <div class="video-modal-label" id="video-modal-quality-label">畫質</div>
+                            <div class="custom-select" id="quality-select">
+                                <div class="custom-select-header" onclick="toggleSelect('quality-select')">
+                                    <span class="custom-select-text">請選擇畫質</span>
+                                    <div class="custom-select-arrow"></div>
+                                </div>
+                                <div class="custom-select-options" id="quality-options"></div>
+                            </div>
                         </div>
-                        <div class="custom-select-options" id="quality-options"></div>
-                    </div>
-                    <div class="video-modal-label" style="margin-top:18px;">影片格式</div>
-                    <div class="custom-select" id="format-select">
-                        <div class="custom-select-header" onclick="toggleSelect('format-select')">
-                            <span class="custom-select-text">請選擇格式</span>
-                            <div class="custom-select-arrow"></div>
+                        <div class="video-modal-option-item">
+                            <div class="video-modal-label">影片格式</div>
+                            <div class="custom-select" id="format-select">
+                                <div class="custom-select-header" onclick="toggleSelect('format-select')">
+                                    <span class="custom-select-text">請選擇格式</span>
+                                    <div class="custom-select-arrow"></div>
+                                </div>
+                                <div class="custom-select-options" id="format-options"></div>
+                            </div>
                         </div>
-                        <div class="custom-select-options" id="format-options"></div>
                     </div>
                 </div>
                 <div class="video-modal-actions">
                     <button class="video-modal-btn cancel" onclick="closeVideoModal()">取消</button>
                     <button class="video-modal-btn" onclick="confirmDownload()">下載</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 播放清單選擇模態視窗 -->
+    <div class="playlist-modal-bg" id="playlist-modal-bg">
+        <div class="playlist-modal">
+            <div class="playlist-modal-header">
+                <div>
+                    <div class="playlist-modal-title" id="playlist-modal-title">播放清單</div>
+                    <div class="playlist-modal-subtitle" id="playlist-modal-subtitle">共 0 部影片</div>
+                </div>
+                <button class="playlist-modal-close" onclick="closePlaylistModal()">×</button>
+            </div>
+            <div class="playlist-modal-toolbar">
+                <label class="playlist-toolbar-check">
+                    <input type="checkbox" id="playlist-select-all" onchange="onPlaylistSelectAllChanged(this.checked)">
+                    全選
+                </label>
+                <label class="playlist-toolbar-check">
+                    <input type="checkbox" id="playlist-apply-highest-quality" onchange="onPlaylistApplyHighestQualityChanged(this.checked)">
+                    套用最高畫質/位元率
+                </label>
+                <div class="playlist-toolbar-select">
+                    <div class="playlist-toolbar-select-label">影片格式(一次套用至所有)</div>
+                    <div class="custom-select" id="playlist-global-format-select">
+                        <div class="custom-select-header" onclick="togglePlaylistGlobalFormatSelect()">
+                            <span class="custom-select-text">-請選擇影片格式-</span>
+                            <div class="custom-select-arrow"></div>
+                        </div>
+                        <div class="custom-select-options" id="playlist-global-format-options">
+                            <div class="custom-select-option" onclick="selectPlaylistGlobalFormatOption('')">-請選擇影片格式-</div>
+                            <div class="custom-select-option" onclick="selectPlaylistGlobalFormatOption('mp4')">影片(mp4)</div>
+                            <div class="custom-select-option" onclick="selectPlaylistGlobalFormatOption('mp3')">音訊(mp3)</div>
+                            <div class="custom-select-option" onclick="selectPlaylistGlobalFormatOption('individual')">個別選擇格式</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="playlist-modal-content" id="playlist-modal-content">
+                <!-- 播放清單影片列表將在這裡動態生成 -->
+            </div>
+            <div class="playlist-modal-footer">
+                <div class="playlist-selected-count" id="playlist-selected-count">已選擇 0 部影片</div>
+                <button class="playlist-download-btn" id="playlist-download-btn" onclick="startPlaylistDownload()" disabled>開始下載</button>
             </div>
         </div>
     </div>
@@ -1727,6 +2127,14 @@
                         if (resolutionCheckbox) {
                             resolutionCheckbox.checked = settings.addResolutionToFilename === true;
                         }
+
+                        const maxConcInput = document.getElementById('max-concurrent-downloads');
+                        if (maxConcInput) {
+                            let v = Number(settings.maxConcurrentDownloads || 3);
+                            if (!isFinite(v)) v = 3;
+                            v = Math.max(1, Math.min(10, Math.round(v)));
+                            maxConcInput.value = String(v);
+                        }
                         
                         const downloadPathInput = document.getElementById('custom-download-path');
                         if (downloadPathInput) {
@@ -1782,6 +2190,19 @@
                 });
                 downloadPathInput.setAttribute('data-listener-added', 'true');
             }
+
+            // 同時下載上限變更時自動儲存
+            const maxConcInput = document.getElementById('max-concurrent-downloads');
+            if (maxConcInput && !maxConcInput.hasAttribute('data-listener-added')) {
+                maxConcInput.addEventListener('change', function() {
+                    let v = Number(this.value || 3);
+                    if (!isFinite(v)) v = 3;
+                    v = Math.max(1, Math.min(10, Math.round(v)));
+                    this.value = String(v);
+                    saveSettings(true);
+                });
+                maxConcInput.setAttribute('data-listener-added', 'true');
+            }
             
             // 為瀏覽按鈕添加點擊事件
             const browseButton = document.getElementById('browse-download-path');
@@ -1812,10 +2233,12 @@
             const notificationCheckbox = document.getElementById('enable-notifications');
             const resolutionCheckbox = document.getElementById('add-resolution-to-filename');
             const downloadPathInput = document.getElementById('custom-download-path');
+            const maxConcInput = document.getElementById('max-concurrent-downloads');
             const settings = {
                 enableNotifications: notificationCheckbox ? notificationCheckbox.checked : true,
                 addResolutionToFilename: resolutionCheckbox ? resolutionCheckbox.checked : false,
-                customDownloadPath: downloadPathInput ? downloadPathInput.value : ''
+                customDownloadPath: downloadPathInput ? downloadPathInput.value : '',
+                maxConcurrentDownloads: maxConcInput ? Number(maxConcInput.value || 3) : 3
             };
             window.__ofNotificationsEnabled = settings.enableNotifications !== false;
             
@@ -1957,6 +2380,14 @@
         function showVideoModal(url) {
             // 記錄目前處理的網址供確認下載使用
             try { currentUrl = (url || '').trim(); } catch(e) { currentUrl = ''; }
+            
+            // 檢測是否為播放清單URL
+            if (url && (url.includes('list=') || url.includes('/playlist'))) {
+                console.log('[前端] 檢測到播放清單URL，直接顯示播放清單模態視窗');
+                showPlaylistModal(url);
+                return;
+            }
+            
             const videoModalBg = document.getElementById('video-modal-bg');
             videoModalBg.style.display = 'flex';
             setTimeout(() => videoModalBg.classList.add('show'), 10);
@@ -1966,7 +2397,15 @@
             requestAnimationFrame(() => showLoading());
             // 背景取得影片資訊，前端以回呼接收，避免阻塞
             setTimeout(function(){
-                window.__onVideoInfo = function(info) {
+                window.__videoInfoCallback = function(info) {
+                    console.log('[前端] showVideoModal 收到資訊回調', info);
+                    // 檢查是否為播放清單資訊
+                    if (info && info.is_playlist) {
+                        console.log('[前端] 檢測到播放清單資訊，切換到播放清單模態視窗');
+                        closeVideoModal();
+                        showPlaylistModal(url, info);
+                        return;
+                    }
                     try { lastVideoInfo = info; } catch(e) {}
 
                     // 畫質選項（由高到低排序）
@@ -2083,14 +2522,14 @@
                     }
 
                     document.getElementById('video-modal-title').innerText = info.title || '';
-                    document.getElementById('video-modal-duration').innerText = info.duration || '';
-                    document.getElementById('video-modal-uploader').innerText = info.uploader ? info.uploader : '';
-                    document.getElementById('video-modal-uploader').style.display = info.uploader ? '' : 'none';
+                    const uploader = info.uploader || '未知上傳者';
+                    const duration = info.duration || '未知時長';
+                    document.getElementById('video-modal-meta').innerText = `${uploader} · ${duration}`;
                     document.getElementById('video-modal-loading').style.display = 'none';
                     document.getElementById('video-modal-content').style.display = '';
                     hideLoading();
                 };
-                window.__onVideoInfoError = function(error) {
+                window.__videoInfoErrorCallback = function(error) {
                     console.error('獲取影片資訊時出錯:', error);
                     showModal('錯誤', '找不到影片，請確認網址是否輸入正確');
                     closeVideoModal();
@@ -2225,18 +2664,18 @@
                     optionDiv.className = 'custom-select-option';
                     optionDiv.textContent = q.label;
                     optionDiv.onclick = () => selectOption('quality-select', q.value, q.label);
-                    // 設定預設選中320kbps
-                    if (q.value === "320") {{
+                    // 設定預設選中192kbps
+                    if (q.value === "192") {{
                         optionDiv.classList.add('selected');
                     }}
                     qualityOptions.appendChild(optionDiv);
                 }});
-                currentQuality = "320"; // 預設音訊品質
+                currentQuality = "192"; // 預設音訊品質
                 const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
                 if (qualitySelectText) {{
-                    qualitySelectText.textContent = "320kbps";
+                    qualitySelectText.textContent = "192kbps";
                 }}
-                qualityLabel.innerText = "音質";
+                qualityLabel.innerText = "位元率";
             }} else {{
                 // 如果是影片格式，從 lastVideoInfo 還原影片畫質
                 if (lastVideoInfo && lastVideoInfo.qualities) {{
@@ -2278,6 +2717,16 @@
          * 確認並開始影片下載。
          * 使用選定的選項呼叫 Python API。
          */
+        function __getBackendApi() {{
+            // Qt WebChannel: window.api
+            // 其他容器相容：window.pywebview.api
+            try {{
+                if (window.api) return window.api;
+                if (window.pywebview && window.pywebview.api) return window.pywebview.api;
+            }} catch(e) {{}}
+            return null;
+        }}
+
         async function confirmDownload() {{
             // 優先使用 showVideoModal 記錄的 currentUrl；若空才讀主頁輸入框
             let url = (currentUrl || '').trim();
@@ -2314,7 +2763,13 @@
             setTimeout(() => {{
                 try {{
                     const task = downloadQueue[downloadQueue.length - 1];
-                    window.pywebview.api.start_download(task.id, url, quality, format)
+                    const backend = __getBackendApi();
+                    if (!backend || !backend.start_download) {{
+                        console.error("找不到後端 API（start_download）");
+                        showModal('錯誤', '後端 API 尚未就緒，請稍後再試');
+                        return;
+                    }}
+                    backend.start_download(task.id, url, quality, format)
                         .then(result => {{ 
                             console.log("下載任務啟動結果:", result);
                             // 檢查是否文件已存在
@@ -2330,7 +2785,8 @@
                                         // 用戶確認刪除並重新下載
                                         const taskId = window._pendingTaskId;
                                         delete window._pendingTaskId;
-                                        window.pywebview.api.confirm_redownload(taskId, true)
+                                        const backend2 = __getBackendApi();
+                                        backend2.confirm_redownload(taskId, true)
                                             .then(result => {{
                                                 console.log("確認重新下載結果:", result);
                                                 if (result && result.includes('失敗')) {{
@@ -2401,7 +2857,7 @@
                         <div class="queue-item-title">${task.title}</div>
                         <div class="queue-item-meta">${task.uploader} · ${task.duration}</div>
                         <div class="queue-item-url">
-                            <a href="${task.url}" target="_blank" title="${task.url}">
+                            <a href="${task.url}" class="queue-item-link" data-url="${task.url}" title="${task.url}">
                                 ${displayUrl}
                             </a>
                         </div>
@@ -2417,6 +2873,35 @@
                     </div>
                 `;
                 queueList.appendChild(itemDiv);
+
+                // 為連結添加點擊事件處理器
+                const linkElement = itemDiv.querySelector('.queue-item-link');
+                if (linkElement) {{
+                    linkElement.addEventListener('click', function(ev) {{
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        const url = this.getAttribute('data-url') || this.getAttribute('href');
+                        if (url) {{
+                            try {{
+                                if (window.api && window.api.open_external_link) {{
+                                    window.api.open_external_link(url);
+                                }} else {{
+                                    // 備用方案
+                                    console.warn('window.api.open_external_link 不可用，嘗試使用 window.open');
+                                    window.open(url, '_blank');
+                                }}
+                            }} catch(e) {{
+                                console.error('無法開啟外部連結:', e);
+                                // 最後的備用方案
+                                try {{
+                                    window.open(url, '_blank');
+                                }} catch(_) {{
+                                    console.error('window.open 也失敗了');
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
 
                 // 如果不是最後一個項目，添加分隔線
                 if (index < downloadQueue.length - 1) {{
@@ -2520,6 +3005,22 @@
                     closeSelect('format-select');
                 }}
             }}
+            
+            // 關閉播放清單下拉選單
+            const playlistModal = document.getElementById('playlist-modal-bg');
+            if (playlistModal && playlistModal.style.display !== 'none') {{
+                const allPlaylistSelects = document.querySelectorAll('.playlist-video-controls .custom-select');
+                allPlaylistSelects.forEach(select => {{
+                    if (!select.contains(event.target)) {{
+                        const options = select.querySelector('.custom-select-options');
+                        const header = select.querySelector('.custom-select-header');
+                        if (options && header) {{
+                            options.classList.remove('show');
+                            header.classList.remove('active');
+                        }}
+                    }}
+                }});
+            }}
         }});
 
         // 禁止右鍵選單
@@ -2556,6 +3057,909 @@
                 return false;
             }}
         }});
+
+        // 播放清單相關變數
+        let currentPlaylistData = null;
+        let playlistVideosData = [];
+        let playlistUseHighestQuality = false;
+        let playlistGlobalFormatMode = ''; // '' | 'mp4' | 'mp3' | 'individual'
+        let playlistPendingQualities = 0;   // 尚未完成畫質提取的影片數
+
+        /**
+         * 顯示播放清單選擇模態視窗
+         */
+        function showPlaylistModal(url, playlistInfo = null) {
+            console.log('[前端] showPlaylistModal 被調用', {url, hasInfo: !!playlistInfo});
+            const modal = document.getElementById('playlist-modal-bg');
+            if (!modal) {
+                console.error('[前端] 找不到播放清單模態視窗元素');
+                showModal('錯誤', '找不到播放清單視窗元素');
+                return;
+            }
+            
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('show'), 10);
+            
+            const content = document.getElementById('playlist-modal-content');
+            if (content) {
+                content.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;">載入中...</div>';
+            }
+            
+            if (playlistInfo) {
+                console.log('[前端] 已有播放清單資訊，直接渲染', playlistInfo);
+                try {
+                    renderPlaylist(playlistInfo);
+                } catch (e) {
+                    console.error('[前端] 渲染播放清單時出錯:', e);
+                    showModal('錯誤', '渲染播放清單時發生錯誤: ' + e.message);
+                    closePlaylistModal();
+                }
+            } else {
+                console.log('[前端] 沒有播放清單資訊，從API獲取');
+                // 從API獲取播放清單資訊
+                if (window.api) {
+                    // 立即設置回調，確保在API返回時能正確處理
+                    console.log('[前端] 立即設置播放清單專用回調函數');
+                    
+                    // 保存當前 URL，用於驗證回調是否對應當前請求
+                    const currentPlaylistUrl = url;
+                    
+                    // 使用回調管理器設置專用回調
+                    window.__videoInfoCallback = function(info) {
+                        console.log('[前端] 收到播放清單資訊回調', info);
+                        console.log('[前端] info 類型:', typeof info);
+                        console.log('[前端] info.is_playlist:', info ? info.is_playlist : 'N/A');
+                        console.log('[前端] 當前請求的 URL:', currentPlaylistUrl);
+                        
+                        try {
+                            if (info && info.is_playlist) {
+                                console.log('[前端] 確認是播放清單，開始渲染');
+                                console.log('[前端] 播放清單標題:', info.playlist_title);
+                                console.log('[前端] 播放清單影片數量:', info.video_count);
+                                console.log('[前端] 播放清單影片列表:', info.videos ? info.videos.length : 0);
+                                renderPlaylist(info);
+                            } else {
+                                console.error('[前端] 不是播放清單資訊:', info);
+                                showModal('錯誤', '無法獲取播放清單資訊');
+                                closePlaylistModal();
+                                hideLoading(); // 關閉載入中覆蓋層
+                            }
+                        } catch (e) {
+                            console.error('[前端] 處理播放清單資訊時出錯:', e);
+                            console.error('[前端] 錯誤堆疊:', e.stack);
+                            showModal('錯誤', '處理播放清單資訊時發生錯誤: ' + e.message);
+                            closePlaylistModal();
+                            hideLoading(); // 關閉載入中覆蓋層
+                        }
+                    };
+                    
+                    window.__videoInfoErrorCallback = function(error) {
+                        console.error('[前端] 獲取播放清單資訊失敗:', error);
+                        showModal('錯誤', '無法獲取播放清單資訊: ' + (error || '未知錯誤'));
+                        closePlaylistModal();
+                        hideLoading(); // 關閉載入中覆蓋層
+                    };
+                    
+                    console.log('[前端] 回調設置完成');
+                    console.log('[前端] window.__videoInfoCallback 是否存在:', typeof window.__videoInfoCallback === 'function');
+                    console.log('[前端] window.__onVideoInfo 是否存在:', typeof window.__onVideoInfo === 'function');
+                    
+                    // 立即調用 API，不使用 setTimeout
+                    console.log('[前端] 立即調用 API 獲取播放清單資訊');
+                    try {
+                        window.api.start_get_video_info(url);
+                        console.log('[前端] API 調用完成（異步執行中）');
+                    } catch (e) {
+                        console.error('[前端] 調用 API 時出錯:', e);
+                        showModal('錯誤', '調用 API 失敗: ' + e.message);
+                        closePlaylistModal();
+                    }
+                } else {
+                    console.error('[前端] API 未初始化');
+                    showModal('錯誤', 'API 未初始化');
+                    closePlaylistModal();
+                    hideLoading(); // 關閉載入中覆蓋層
+                }
+            }
+        }
+
+        /**
+         * 渲染播放清單
+         */
+        function renderPlaylist(playlistInfo) {
+            console.log('[前端] renderPlaylist 開始', playlistInfo);
+            try {
+                if (!playlistInfo) {
+                    console.error('[前端] 播放清單資訊為空');
+                    showModal('錯誤', '播放清單資訊為空');
+                    closePlaylistModal();
+                    hideLoading(); // 關閉載入中覆蓋層
+                    return;
+                }
+                
+                currentPlaylistData = playlistInfo;
+                const videos = playlistInfo.videos || [];
+                console.log('[前端] 播放清單包含', videos.length, '部影片');
+                
+                // 預設全選下載：selected=true
+                playlistVideosData = videos.map((video, idx) => {
+                    console.log(`[前端] 處理影片 ${idx + 1}:`, video.title || '無標題');
+                    return {
+                        ...video,
+                        selected: true,
+                        quality: '1080p',
+                        format: 'mp4',
+                        qualities: null,
+                        formats: null
+                    };
+                });
+
+                // 更新標題
+                const titleEl = document.getElementById('playlist-modal-title');
+                const subtitleEl = document.getElementById('playlist-modal-subtitle');
+                if (titleEl) {
+                    titleEl.textContent = playlistInfo.playlist_title || '播放清單';
+                }
+                if (subtitleEl) {
+                    subtitleEl.textContent = `共 ${playlistInfo.video_count || playlistVideosData.length || 0} 部影片`;
+                }
+
+                // 渲染影片列表
+                const content = document.getElementById('playlist-modal-content');
+                if (!content) {
+                    console.error('[前端] 找不到播放清單內容容器');
+                    showModal('錯誤', '找不到播放清單內容容器');
+                    return;
+                }
+                
+                console.log('[前端] 清空內容容器，開始渲染', playlistVideosData.length, '個項目');
+                content.innerHTML = '';
+
+                if (playlistVideosData.length === 0) {
+                    content.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;">播放清單中沒有影片</div>';
+                    console.log('[前端] 播放清單為空');
+                    updatePlaylistSelectedCount();
+                    hideLoading(); // 關閉載入中覆蓋層
+                    return;
+                }
+
+                // 初始化畫質載入計數
+                playlistPendingQualities = playlistVideosData.length;
+
+                playlistVideosData.forEach((video, index) => {
+                    try {
+                        const item = document.createElement('div');
+                        item.className = 'playlist-video-item';
+                        item.dataset.index = index;
+                        
+                        // 轉義HTML特殊字符，防止XSS
+                        const escapeHtml = (text) => {
+                            if (!text) return '';
+                            const div = document.createElement('div');
+                            div.textContent = String(text);
+                            return div.innerHTML;
+                        };
+                        
+                        const safeTitle = escapeHtml(video.title || '無標題');
+                        const safeDuration = escapeHtml(video.duration || '未知時長');
+                        const safeThumb = escapeHtml(video.thumb || 'assets/icon.png');
+                        const safeUploader = escapeHtml(video.uploader || playlistInfo.playlist_uploader || '未知上傳者');
+                        
+                        item.innerHTML = `
+                            <input type="checkbox" class="playlist-video-checkbox" onchange="togglePlaylistVideo(${index})" ${video.selected ? 'checked' : ''}>
+                            <img class="playlist-video-thumb" src="${safeThumb}" alt="縮圖" onerror="this.src='assets/icon.png'">
+                            <div class="playlist-video-info">
+                                <div class="playlist-video-title">${safeTitle}</div>
+                                <div class="playlist-video-meta">${safeUploader} · ${safeDuration}</div>
+                            </div>
+                            <div class="playlist-video-controls">
+                                <div class="playlist-video-select">
+                                    <label style="display:block;font-size:11px;color:#aaa;margin-bottom:3px;" id="playlist-quality-label-${index}">${(video.format === 'mp3') ? '位元率' : '畫質'}</label>
+                                    <div class="custom-select ${playlistUseHighestQuality ? 'disabled' : ''}" id="playlist-quality-${index}">
+                                        <div class="custom-select-header" onclick="togglePlaylistSelect('playlist-quality-${index}', ${index}, 'quality')">
+                                            <span class="custom-select-text">${(video.format === 'mp3') ? (video.quality ? (AUDIO_QUALITIES.find(q => q.value === video.quality)?.label || '192kbps') : '192kbps') : (video.quality || '1080p')}</span>
+                                            <div class="custom-select-arrow"></div>
+                                        </div>
+                                        <div class="custom-select-options">
+                                            <div class="custom-select-option ${video.quality === '1080p' ? 'selected' : ''}" onclick="selectPlaylistOption('playlist-quality-${index}', ${index}, 'quality', '1080p')">1080p</div>
+                                            <div class="custom-select-option ${video.quality === '720p' ? 'selected' : ''}" onclick="selectPlaylistOption('playlist-quality-${index}', ${index}, 'quality', '720p')">720p</div>
+                                            <div class="custom-select-option ${video.quality === '480p' ? 'selected' : ''}" onclick="selectPlaylistOption('playlist-quality-${index}', ${index}, 'quality', '480p')">480p</div>
+                                            <div class="custom-select-option ${video.quality === '360p' ? 'selected' : ''}" onclick="selectPlaylistOption('playlist-quality-${index}', ${index}, 'quality', '360p')">360p</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="playlist-video-select">
+                                    <label style="display:block;font-size:11px;color:#aaa;margin-bottom:3px;">格式</label>
+                                    <div class="custom-select ${playlistGlobalFormatMode && playlistGlobalFormatMode !== 'individual' ? 'disabled' : ''}" id="playlist-format-${index}">
+                                        <div class="custom-select-header" onclick="togglePlaylistSelect('playlist-format-${index}', ${index}, 'format')">
+                                            <span class="custom-select-text">${(video.format === 'mp3') ? '音訊(mp3)' : '影片(mp4)'}</span>
+                                            <div class="custom-select-arrow"></div>
+                                        </div>
+                                        <div class="custom-select-options">
+                                            <div class="custom-select-option ${video.format === 'mp4' ? 'selected' : ''}" onclick="selectPlaylistOption('playlist-format-${index}', ${index}, 'format', 'mp4')">影片(mp4)</div>
+                                            <div class="custom-select-option ${video.format === 'mp3' ? 'selected' : ''}" onclick="selectPlaylistOption('playlist-format-${index}', ${index}, 'format', 'mp3')">音訊(mp3)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        
+                        content.appendChild(item);
+                        console.log(`[前端] 影片 ${index + 1} 渲染完成`);
+                    } catch (e) {
+                        console.error(`[前端] 渲染影片 ${index + 1} 時出錯:`, e);
+                    }
+                });
+
+                console.log('[前端] 所有影片渲染完成，更新選擇計數');
+                updatePlaylistSelectedCount();
+                syncPlaylistToolbarState();
+                updatePlaylistControlsLockState();
+                console.log('[前端] renderPlaylist 完成，開始 eager 畫質提取');
+
+                // eager：背景逐支提取每部影片的畫質選項（與單支下載邏輯一致）。
+                // 注意：在全部畫質載入完成前不要關閉「載入中」遮罩。
+                try {
+                    const backend = __getBackendApi();
+                    if (backend && backend.start_playlist_qualities_fetch) {
+                        const payload = playlistVideosData.map((v, idx) => ({ index: idx, url: v.url }));
+                        backend.start_playlist_qualities_fetch(JSON.stringify(payload))
+                            .then((res) => { console.log('[播放清單] start_playlist_qualities_fetch:', res); })
+                            .catch((e) => { console.error('[播放清單] start_playlist_qualities_fetch error:', e); });
+                    } else {
+                        // 後端不支援時，直接關閉載入中遮罩
+                        playlistPendingQualities = 0;
+                        hideLoading();
+                    }
+                } catch (e) {
+                    console.error('[播放清單] eager 畫質提取啟動失敗:', e);
+                    playlistPendingQualities = 0;
+                    hideLoading();
+                }
+            } catch (e) {
+                console.error('[前端] renderPlaylist 發生錯誤:', e);
+                showModal('錯誤', '渲染播放清單時發生錯誤: ' + e.message);
+                closePlaylistModal();
+                hideLoading(); // 發生錯誤時也要關閉載入中覆蓋層
+            }
+        }
+
+        // 後端逐支回推播放清單單一影片的畫質選項
+        window.__onPlaylistVideoQualities = function(index, qualities) {
+            try {
+                const idx = Number(index);
+                if (!Number.isFinite(idx) || !playlistVideosData[idx]) return;
+                if (!Array.isArray(qualities)) qualities = [];
+                const video = playlistVideosData[idx];
+                video.qualities = qualities;
+
+                // 檢查當前格式，如果是音訊格式，使用 updatePlaylistVideoQualityOptions 更新
+                const audioTypes = ["mp3", "aac", "flac", "wav"];
+                if (audioTypes.includes(video.format)) {
+                    // 音訊格式，使用專門的更新函數
+                    updatePlaylistVideoQualityOptions(idx, video.format);
+                    // 標記為已載入
+                    if (!video._qualitiesLoaded) {
+                        video._qualitiesLoaded = true;
+                        if (playlistPendingQualities > 0) {
+                            playlistPendingQualities--;
+                            if (playlistPendingQualities <= 0) {
+                                playlistPendingQualities = 0;
+                                hideLoading();
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // 更新對應下拉 options（影片格式）
+                const qSel = document.getElementById(`playlist-quality-${idx}`);
+                const options = qSel ? qSel.querySelector('.custom-select-options') : null;
+                if (!options) return;
+
+                const sorted = sortQualities(qualities);
+                // 若沒有任何可用畫質，就維持原本預設項目，但仍視為已完成載入
+                if (!sorted.length) {
+                    if (playlistPendingQualities > 0) {
+                        playlistPendingQualities--;
+                        if (playlistPendingQualities <= 0) {
+                            playlistPendingQualities = 0;
+                            hideLoading();
+                        }
+                    }
+                    return;
+                }
+
+                // 若套用最高畫質已勾選，立刻套用最高並鎖定顯示
+                if (playlistUseHighestQuality) {
+                    const best = sorted[0]?.label;
+                    if (best) playlistVideosData[idx].quality = best;
+                } else {
+                    // 若目前選擇不在清單中，回退到最高畫質
+                    const cur = playlistVideosData[idx].quality || '';
+                    const exists = sorted.some(q => (q && q.label) === cur);
+                    if (!exists && sorted[0]?.label) playlistVideosData[idx].quality = sorted[0].label;
+                }
+
+                // 重建 options
+                options.innerHTML = '';
+                sorted.forEach(q => {
+                    const label = q.label + (q.ratio ? (' ' + q.ratio) : '');
+                    const div = document.createElement('div');
+                    div.className = 'custom-select-option';
+                    div.textContent = q.label;
+                    if (q.label === playlistVideosData[idx].quality) div.classList.add('selected');
+                    div.onclick = () => selectPlaylistOption(`playlist-quality-${idx}`, idx, 'quality', q.label);
+                    options.appendChild(div);
+                });
+
+                // 更新 header 顯示
+                const textSpan = qSel.querySelector('.custom-select-text');
+                if (textSpan) textSpan.textContent = playlistVideosData[idx].quality;
+
+                // 若套用最高畫質已開，更新鎖定狀態（確保 disabled class）
+                updatePlaylistControlsLockState();
+
+                // 標記此影片畫質已載入並更新全域計數
+                if (!video._qualitiesLoaded) {
+                    video._qualitiesLoaded = true;
+                    if (playlistPendingQualities > 0) {
+                        playlistPendingQualities--;
+                        if (playlistPendingQualities <= 0) {
+                            playlistPendingQualities = 0;
+                            console.log('[播放清單] 所有影片畫質已載入，關閉載入中遮罩');
+                            hideLoading();
+                        }
+                    }
+                }
+            } catch(e) {
+                console.error('[播放清單] __onPlaylistVideoQualities failed:', e);
+            }
+        };
+
+        /**
+         * 切換播放清單下拉選單
+         */
+        function togglePlaylistSelect(selectId, index, type) {
+            // 套用最高畫質：鎖定單支畫質
+            if (type === 'quality' && playlistUseHighestQuality) return;
+            // 全部影片格式非 individual：鎖定單支格式
+            if (type === 'format' && playlistGlobalFormatMode && playlistGlobalFormatMode !== 'individual') return;
+            // 檢查是否被禁用
+            const select = document.getElementById(selectId);
+            if (!select || select.classList.contains('disabled')) return;
+            
+            const options = select.querySelector('.custom-select-options');
+            const header = select.querySelector('.custom-select-header');
+            
+            if (!options || !header) return;
+            
+            // 關閉其他播放清單下拉選單
+            const allSelects = document.querySelectorAll('.playlist-video-controls .custom-select');
+            allSelects.forEach(s => {
+                if (s.id !== selectId) {
+                    const opt = s.querySelector('.custom-select-options');
+                    const hdr = s.querySelector('.custom-select-header');
+                    if (opt && hdr) {
+                        opt.classList.remove('show');
+                        hdr.classList.remove('active');
+                    }
+                }
+            });
+            
+            // 切換當前下拉選單
+            const isOpen = options.classList.contains('show');
+            if (isOpen) {
+                options.classList.remove('show');
+                header.classList.remove('active');
+            } else {
+                options.classList.add('show');
+                header.classList.add('active');
+            }
+        }
+        
+        /**
+         * 選擇播放清單選項
+         */
+        function selectPlaylistOption(selectId, index, type, value) {
+            const select = document.getElementById(selectId);
+            if (!select || select.classList.contains('disabled')) return;
+            
+            const header = select.querySelector('.custom-select-header');
+            const textSpan = header ? header.querySelector('.custom-select-text') : null;
+            const options = select.querySelector('.custom-select-options');
+            
+            // 更新顯示文字
+            if (textSpan) {
+                if (type === 'quality') {
+                    // 檢查是否為音訊位元率，如果是則顯示完整的 label（包含 kbps）
+                    const audioTypes = ["mp3", "aac", "flac", "wav"];
+                    const video = playlistVideosData[index];
+                    if (video && audioTypes.includes(video.format)) {
+                        // 音訊格式：根據 value 找到對應的 label
+                        const audioQuality = AUDIO_QUALITIES.find(q => q.value === value);
+                        textSpan.textContent = audioQuality ? audioQuality.label : value;
+                    } else {
+                        // 影片格式：直接顯示 value
+                        textSpan.textContent = value;
+                    }
+                } else if (type === 'format') {
+                    textSpan.textContent = (value === 'mp3') ? '音訊(mp3)' : '影片(mp4)';
+                }
+            }
+            
+            // 更新選中狀態
+            if (options) {
+                options.querySelectorAll('.custom-select-option').forEach(opt => {
+                    opt.classList.remove('selected');
+                    // 根據類型匹配選項
+                    if (type === 'quality' && opt.textContent.trim() === value) {
+                        opt.classList.add('selected');
+                    } else if (type === 'format') {
+                        if ((value === 'mp4' && opt.textContent.includes('mp4')) ||
+                            (value === 'mp3' && opt.textContent.includes('mp3'))) {
+                            opt.classList.add('selected');
+                        }
+                    }
+                });
+            }
+            
+            // 關閉下拉選單
+            if (options) options.classList.remove('show');
+            if (header) header.classList.remove('active');
+            
+            // 更新數據
+            if (type === 'quality') {
+                updatePlaylistVideoQuality(index, value);
+            } else if (type === 'format') {
+                updatePlaylistVideoFormat(index, value);
+                // 格式改變時，立即更新畫質選項和顯示
+                updatePlaylistVideoQualityOptions(index, value);
+            }
+        }
+        
+        /**
+         * 切換播放清單影片選擇狀態
+         */
+        function togglePlaylistVideo(index) {
+            if (playlistVideosData[index]) {
+                playlistVideosData[index].selected = !playlistVideosData[index].selected;
+                const item = document.querySelector(`.playlist-video-item[data-index="${index}"]`);
+                if (item) {
+                    if (playlistVideosData[index].selected) {
+                        item.classList.add('selected');
+                    } else {
+                        item.classList.remove('selected');
+                    }
+                }
+                updatePlaylistSelectedCount();
+                syncPlaylistToolbarState();
+            }
+        }
+
+        /**
+         * 更新播放清單影片畫質
+         */
+        function updatePlaylistVideoQuality(index, quality) {
+            if (playlistVideosData[index]) {
+                playlistVideosData[index].quality = quality;
+            }
+        }
+
+        /**
+         * 更新播放清單影片格式
+         */
+        function updatePlaylistVideoFormat(index, format) {
+            if (playlistVideosData[index]) {
+                playlistVideosData[index].format = format;
+                // 更新畫質選項和標籤
+                updatePlaylistVideoQualityOptions(index, format);
+            }
+        }
+
+        /**
+         * 根據格式更新播放清單項目的畫質選項
+         */
+        function updatePlaylistVideoQualityOptions(index, format) {
+            const audioTypes = ["mp3", "aac", "flac", "wav"];
+            const isAudio = audioTypes.includes(format);
+            
+            // 更新標籤
+            const qualityLabel = document.getElementById(`playlist-quality-label-${index}`);
+            if (qualityLabel) {
+                qualityLabel.textContent = isAudio ? '位元率' : '畫質';
+            }
+            
+            // 更新畫質選項
+            const qSel = document.getElementById(`playlist-quality-${index}`);
+            if (!qSel) return;
+            
+            const options = qSel.querySelector('.custom-select-options');
+            const textSpan = qSel.querySelector('.custom-select-text');
+            if (!options) return;
+            
+            const video = playlistVideosData[index];
+            
+            if (isAudio) {
+                // 如果是音訊格式，顯示音訊位元率選項
+                options.innerHTML = '';
+                // 檢查當前品質是否為有效的音訊位元率
+                const isValidAudioQuality = AUDIO_QUALITIES.some(q => q.value === video.quality);
+                // 若套用最高畫質/位元率已勾選，使用最高位元率；否則如果當前品質是有效的音訊位元率就使用它，否則使用預設值
+                const targetQuality = playlistUseHighestQuality 
+                    ? AUDIO_QUALITIES[0].value 
+                    : (isValidAudioQuality ? video.quality : '192');
+                
+                // 確保 video.quality 被設置為有效的音訊位元率
+                video.quality = targetQuality;
+                
+                AUDIO_QUALITIES.forEach(q => {
+                    const div = document.createElement('div');
+                    div.className = 'custom-select-option';
+                    div.textContent = q.label;
+                    if (q.value === targetQuality) {
+                        div.classList.add('selected');
+                        if (textSpan) textSpan.textContent = q.label;
+                    }
+                    div.onclick = () => selectPlaylistOption(`playlist-quality-${index}`, index, 'quality', q.value);
+                    options.appendChild(div);
+                });
+                
+                // 確保顯示文字已更新
+                const qualityObj = AUDIO_QUALITIES.find(q => q.value === targetQuality);
+                if (textSpan && qualityObj) {
+                    textSpan.textContent = qualityObj.label;
+                }
+            } else {
+                // 如果是影片格式，顯示影片畫質選項
+                // 如果有已載入的畫質選項，使用它們；否則使用預設選項
+                if (video.qualities && video.qualities.length > 0) {
+                    options.innerHTML = '';
+                    const sorted = sortQualities(video.qualities);
+                    sorted.forEach(q => {
+                        const label = q.label + (q.ratio ? (' ' + q.ratio) : '');
+                        const div = document.createElement('div');
+                        div.className = 'custom-select-option';
+                        div.textContent = q.label;
+                        if (q.label === (video.quality || '1080p')) {
+                            div.classList.add('selected');
+                            if (textSpan) textSpan.textContent = q.label;
+                        }
+                        div.onclick = () => selectPlaylistOption(`playlist-quality-${index}`, index, 'quality', q.label);
+                        options.appendChild(div);
+                    });
+                    // 如果當前品質不在清單中，設置為第一個
+                    if (!sorted.some(q => q.label === video.quality) && sorted.length > 0) {
+                        video.quality = sorted[0].label;
+                        if (textSpan) textSpan.textContent = sorted[0].label;
+                    }
+                } else {
+                    // 如果還沒有載入畫質，使用預設選項
+                    options.innerHTML = '';
+                    const defaultQualities = ['1080p', '720p', '480p', '360p'];
+                    // 如果當前品質是音訊位元率，重置為預設值
+                    if (!defaultQualities.includes(video.quality)) {
+                        video.quality = '1080p';
+                    }
+                    defaultQualities.forEach(q => {
+                        const div = document.createElement('div');
+                        div.className = 'custom-select-option';
+                        div.textContent = q;
+                        if (q === (video.quality || '1080p')) {
+                            div.classList.add('selected');
+                            if (textSpan) textSpan.textContent = q;
+                        }
+                        div.onclick = () => selectPlaylistOption(`playlist-quality-${index}`, index, 'quality', q);
+                        options.appendChild(div);
+                    });
+                }
+            }
+        }
+
+        /**
+         * 全選播放清單影片
+         */
+        function selectAllPlaylistVideos() {
+            playlistVideosData.forEach((video, index) => {
+                video.selected = true;
+                const checkbox = document.querySelector(`.playlist-video-item[data-index="${index}"] .playlist-video-checkbox`);
+                if (checkbox) checkbox.checked = true;
+                const item = document.querySelector(`.playlist-video-item[data-index="${index}"]`);
+                if (item) item.classList.add('selected');
+            });
+            updatePlaylistSelectedCount();
+            syncPlaylistToolbarState();
+        }
+
+        /**
+         * 取消全選播放清單影片
+         */
+        function deselectAllPlaylistVideos() {
+            playlistVideosData.forEach((video, index) => {
+                video.selected = false;
+                const checkbox = document.querySelector(`.playlist-video-item[data-index="${index}"] .playlist-video-checkbox`);
+                if (checkbox) checkbox.checked = false;
+                const item = document.querySelector(`.playlist-video-item[data-index="${index}"]`);
+                if (item) item.classList.remove('selected');
+            });
+            updatePlaylistSelectedCount();
+            syncPlaylistToolbarState();
+        }
+
+        function onPlaylistSelectAllChanged(checked) {
+            if (checked) selectAllPlaylistVideos();
+            else deselectAllPlaylistVideos();
+        }
+
+        function syncPlaylistToolbarState() {
+            try {
+                const allCb = document.getElementById('playlist-select-all');
+                if (allCb) {
+                    const allSelected = playlistVideosData.length > 0 && playlistVideosData.every(v => !!v.selected);
+                    const noneSelected = playlistVideosData.every(v => !v.selected);
+                    allCb.indeterminate = !allSelected && !noneSelected;
+                    allCb.checked = allSelected;
+                }
+                const hq = document.getElementById('playlist-apply-highest-quality');
+                if (hq) hq.checked = !!playlistUseHighestQuality;
+                const gfSel = document.getElementById('playlist-global-format-select');
+                if (gfSel) {
+                    const textSpan = gfSel.querySelector('.custom-select-text');
+                    const label =
+                        (playlistGlobalFormatMode === 'mp4') ? '影片(mp4)' :
+                        (playlistGlobalFormatMode === 'mp3') ? '音訊(mp3)' :
+                        (playlistGlobalFormatMode === 'individual') ? '個別選擇格式' :
+                        '-請選擇影片格式-';
+                    if (textSpan) textSpan.textContent = label;
+                    const opts = gfSel.querySelectorAll('.custom-select-option');
+                    opts.forEach(opt => {
+                        const t = (opt.textContent || '').trim();
+                        const selected =
+                            (playlistGlobalFormatMode === 'mp4' && t.includes('mp4')) ||
+                            (playlistGlobalFormatMode === 'mp3' && t.includes('mp3')) ||
+                            (playlistGlobalFormatMode === 'individual' && t.includes('個別')) ||
+                            (!playlistGlobalFormatMode && t.includes('-請選擇影片格式-'));
+                        opt.classList.toggle('selected', !!selected);
+                    });
+                }
+            } catch(e) {}
+        }
+
+        function togglePlaylistGlobalFormatSelect() {
+            const select = document.getElementById('playlist-global-format-select');
+            if (!select) return;
+            const options = document.getElementById('playlist-global-format-options');
+            const header = select.querySelector('.custom-select-header');
+            if (!options || !header) return;
+
+            // 關閉其他播放清單下拉選單（含單支影片的）
+            try {
+                document.querySelectorAll('.playlist-video-controls .custom-select-options.show').forEach(el => el.classList.remove('show'));
+                document.querySelectorAll('.playlist-video-controls .custom-select-header.active').forEach(el => el.classList.remove('active'));
+            } catch(e) {}
+
+            const isOpen = options.classList.contains('show');
+            if (isOpen) {
+                options.classList.remove('show');
+                header.classList.remove('active');
+            } else {
+                options.classList.add('show');
+                header.classList.add('active');
+            }
+        }
+
+        function selectPlaylistGlobalFormatOption(value) {
+            // 關閉下拉
+            try {
+                const options = document.getElementById('playlist-global-format-options');
+                const header = document.querySelector('#playlist-global-format-select .custom-select-header');
+                if (options) options.classList.remove('show');
+                if (header) header.classList.remove('active');
+            } catch(e) {}
+
+            // 移除錯誤標示（如果有的話）
+            const formatSelect = document.getElementById('playlist-global-format-select');
+            if (formatSelect) {
+                formatSelect.classList.remove('error');
+            }
+
+            // 轉呼叫既有邏輯
+            onPlaylistGlobalFormatChanged(value);
+        }
+
+        function updatePlaylistControlsLockState() {
+            try {
+                // 關閉所有已開啟的 options
+                document.querySelectorAll('.playlist-video-controls .custom-select-options.show').forEach(el => el.classList.remove('show'));
+                document.querySelectorAll('.playlist-video-controls .custom-select-header.active').forEach(el => el.classList.remove('active'));
+
+                const lockQuality = !!playlistUseHighestQuality;
+                // 當選擇"-請選擇影片格式-"時（空字串），也要鎖定格式和畫質
+                const lockFormat = !!(playlistGlobalFormatMode && playlistGlobalFormatMode !== 'individual') || playlistGlobalFormatMode === '';
+
+                playlistVideosData.forEach((_, idx) => {
+                    const qSel = document.getElementById(`playlist-quality-${idx}`);
+                    if (qSel) qSel.classList.toggle('disabled', lockQuality || playlistGlobalFormatMode === '');
+                    const fSel = document.getElementById(`playlist-format-${idx}`);
+                    if (fSel) fSel.classList.toggle('disabled', lockFormat);
+                });
+            } catch(e) {}
+        }
+
+        function onPlaylistApplyHighestQualityChanged(checked) {
+            playlistUseHighestQuality = !!checked;
+            if (playlistUseHighestQuality) {
+                // 立即對已拿到 qualities 的影片套用最高畫質/位元率
+                playlistVideosData.forEach((video, idx) => {
+                    const audioTypes = ["mp3", "aac", "flac", "wav"];
+                    const isAudio = audioTypes.includes(video.format);
+                    
+                    if (isAudio) {
+                        // 音訊格式：套用最高位元率（320kbps）
+                        const bestAudio = AUDIO_QUALITIES[0]; // 第一個就是最高的（320kbps）
+                        if (bestAudio) {
+                            video.quality = bestAudio.value;
+                            const qSel = document.getElementById(`playlist-quality-${idx}`);
+                            const textSpan = qSel ? qSel.querySelector('.custom-select-text') : null;
+                            if (textSpan) textSpan.textContent = bestAudio.label;
+                            const opts = qSel ? qSel.querySelectorAll('.custom-select-option') : [];
+                            opts.forEach(opt => opt.classList.toggle('selected', opt.textContent.trim() === bestAudio.label));
+                        }
+                    } else {
+                        // 影片格式：套用最高畫質
+                        const qs = video.qualities;
+                        if (Array.isArray(qs) && qs.length > 0) {
+                            const best = sortQualities(qs)[0]?.label;
+                            if (best) {
+                                video.quality = best;
+                                // 同步 UI（不重渲染）
+                                const qSel = document.getElementById(`playlist-quality-${idx}`);
+                                const textSpan = qSel ? qSel.querySelector('.custom-select-text') : null;
+                                if (textSpan) textSpan.textContent = best;
+                                const opts = qSel ? qSel.querySelectorAll('.custom-select-option') : [];
+                                opts.forEach(opt => opt.classList.toggle('selected', opt.textContent.trim() === best));
+                            }
+                        }
+                    }
+                });
+            }
+            updatePlaylistControlsLockState();
+            syncPlaylistToolbarState();
+        }
+
+        function onPlaylistGlobalFormatChanged(value) {
+            playlistGlobalFormatMode = (value || '').trim();
+            if (playlistGlobalFormatMode && playlistGlobalFormatMode !== 'individual') {
+                playlistVideosData.forEach((v, idx) => {
+                    v.format = playlistGlobalFormatMode;
+                    // 同步 UI（不重渲染）
+                    const fSel = document.getElementById(`playlist-format-${idx}`);
+                    const textSpan = fSel ? fSel.querySelector('.custom-select-text') : null;
+                    if (textSpan) textSpan.textContent = (playlistGlobalFormatMode === 'mp3') ? '音訊(mp3)' : '影片(mp4)';
+                    const opts = fSel ? fSel.querySelectorAll('.custom-select-option') : [];
+                    opts.forEach(opt => opt.classList.toggle('selected',
+                        (playlistGlobalFormatMode === 'mp4' && opt.textContent.includes('mp4')) ||
+                        (playlistGlobalFormatMode === 'mp3' && opt.textContent.includes('mp3'))
+                    ));
+                    // 更新畫質選項和標籤
+                    updatePlaylistVideoQualityOptions(idx, playlistGlobalFormatMode);
+                });
+            }
+            updatePlaylistControlsLockState();
+            syncPlaylistToolbarState();
+        }
+
+        /**
+         * 套用畫質到已選影片
+         */
+        // 已刪除：套用畫質/格式到已選（改為工具列：套用最高畫質 + 全部影片格式）
+
+        /**
+         * 更新已選擇影片數量
+         */
+        function updatePlaylistSelectedCount() {
+            const count = playlistVideosData.filter(v => v.selected).length;
+            document.getElementById('playlist-selected-count').textContent = `已選擇 ${count} 部影片`;
+            document.getElementById('playlist-download-btn').disabled = count === 0;
+        }
+
+        /**
+         * 開始播放清單下載
+         */
+        function startPlaylistDownload() {
+            const selectedVideos = playlistVideosData.filter(v => v.selected);
+            if (selectedVideos.length === 0) {
+                showModal('錯誤', '請至少選擇一部影片');
+                return;
+            }
+
+            // 檢查是否選擇了影片格式
+            if (!playlistGlobalFormatMode || playlistGlobalFormatMode === '') {
+                showModal('提醒', '請選擇影片格式');
+                // 醒目標示影片格式下拉欄
+                const formatSelect = document.getElementById('playlist-global-format-select');
+                if (formatSelect) {
+                    formatSelect.classList.add('error');
+                    // 打開下拉選單以提醒用戶
+                    const header = formatSelect.querySelector('.custom-select-header');
+                    const options = document.getElementById('playlist-global-format-options');
+                    if (header && options) {
+                        options.classList.add('show');
+                        header.classList.add('active');
+                    }
+                    // 3秒後移除錯誤標示
+                    setTimeout(() => {
+                        formatSelect.classList.remove('error');
+                        if (options && header) {
+                            options.classList.remove('show');
+                            header.classList.remove('active');
+                        }
+                    }, 3000);
+                }
+                return;
+            }
+
+            const backend = __getBackendApi();
+            if (!backend || !(backend.start_batch_download || backend.start_download)) {
+                showModal('錯誤', '後端 API 尚未就緒，請稍後再試');
+                return;
+            }
+
+            // 先把任務加入佇列（UI 立即可見）
+            const batchPayload = [];
+            selectedVideos.forEach((video) => {
+                const taskId = nextTaskId++;
+                const task = {
+                    id: taskId,
+                    url: video.url,
+                    title: video.title || '未知影片',
+                    thumbnail: video.thumb || '',
+                    uploader: currentPlaylistData?.playlist_uploader || '未知作者',
+                    duration: video.duration || '00:00',
+                    quality: video.quality || '1080p',
+                    format: video.format || 'mp4',
+                    progress: 0,
+                    status: '等待中',
+                    filePath: '',
+                    eta: ''
+                };
+                addDownloadTask(task);
+                batchPayload.push({ id: taskId, url: task.url, quality: task.quality, format: task.format });
+            });
+
+            // 交給後端統一排程（比 setTimeout 多次呼叫穩定）
+            try {
+                if (backend.start_batch_download) {
+                    backend.start_batch_download(JSON.stringify(batchPayload))
+                        .then((result) => { console.log('批量下載結果:', result); })
+                        .catch((e) => { console.error('批量下載失敗:', e); });
+                } else {
+                    // 後備：逐個啟動
+                    batchPayload.forEach((it, idx) => {
+                        setTimeout(() => {
+                            try { backend.start_download(it.id, it.url, it.quality, it.format); } catch(_) {}
+                        }, idx * 500);
+                    });
+                }
+            } catch(e) {
+                console.error('啟動批量下載時出錯:', e);
+            }
+
+            showModal('成功', `已開始下載 ${selectedVideos.length} 部影片`);
+            closePlaylistModal();
+            showPage('queue');
+        }
+
+        /**
+         * 關閉播放清單模態視窗
+         */
+        function closePlaylistModal() {
+            const modal = document.getElementById('playlist-modal-bg');
+            modal.classList.remove('show');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 300);
+        }
 
         // 首次載入時，綁定Enter事件並顯示主頁
         document.addEventListener('DOMContentLoaded', () => {{

@@ -4,39 +4,51 @@
 HTML 內容模組 - 完整版本
 """
 
+print("html_content.py is starting...")
+
+import os
+import sys
+
+# 添加父目錄到路徑，以便導入其他模組
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)  # main/scripts
+root_dir = os.path.dirname(parent_dir)  # main
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 def get_html_content():
     """獲取完整的 HTML 內容"""
     import os
-    from utils.file_utils import safe_path_join
+    from scripts.utils.file_utils import safe_path_join
     
     # 優先載入 main.html 檔案（使用相對路徑）
-    html_file = safe_path_join(os.path.dirname(__file__), '..', 'main.html')
+    html_file = safe_path_join(os.path.dirname(__file__), '..', '..', 'main.html')
     if os.path.exists(html_file):
         try:
             with open(html_file, 'r', encoding='utf-8') as f:
                 content = f.read()
                 if content.strip():
-                    from utils.logger import info_console
+                    from scripts.utils.logger import info_console
                     info_console(f"成功載入 main.html，長度: {len(content)}")
                     return content
                 else:
-                    from utils.logger import warning_console
+                    from scripts.utils.logger import warning_console
                     warning_console("main.html 檔案為空，使用預設內容")
         except UnicodeDecodeError as e:
-            from utils.logger import error_console
+            from scripts.utils.logger import error_console
             error_console(f"main.html 編碼錯誤: {e}")
         except PermissionError as e:
-            from utils.logger import error_console
+            from scripts.utils.logger import error_console
             error_console(f"main.html 權限不足: {e}")
         except Exception as e:
-            from utils.logger import error_console
+            from scripts.utils.logger import error_console
             error_console(f"讀取 main.html 失敗: {e}")
     else:
-        from utils.logger import warning_console
+        from scripts.utils.logger import warning_console
         warning_console(f"main.html 檔案不存在: {html_file}")
     
     # 如果檔案不存在或讀取失敗，返回簡化版本
-    from utils.logger import info_console
+    from scripts.utils.logger import info_console
     info_console("使用內建HTML內容")
     return '''<!DOCTYPE html>
 <html lang="zh-tw">

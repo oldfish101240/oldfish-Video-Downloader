@@ -4,18 +4,28 @@
 主視窗模組
 """
 
+print("main_window.py is starting...")
+
 import os
 import sys
+
+# 添加父目錄到路徑，以便導入其他模組
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)  # main/scripts
+root_dir = os.path.dirname(parent_dir)  # main
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QStyle
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QIcon
-from core.api import Api
-from config.constants import APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
-from utils.logger import debug_console, info_console, error_console, warning_console
-from utils.file_utils import safe_path_join, get_assets_path
-from ui.html_content import get_html_content
+from scripts.core.api import Api
+from scripts.config.constants import APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
+from scripts.utils.logger import main_window_console, LogLevel
+from scripts.utils.file_utils import safe_path_join, get_assets_path
+from scripts.ui.html_content import get_html_content
 
 class MainWindow(QMainWindow):
     """主視窗類別"""
@@ -58,9 +68,9 @@ class MainWindow(QMainWindow):
             settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
             # 啟用開發者工具（按 F12 或右鍵 -> 檢查）
             # 注意：QWebEngineView 預設支援開發者工具，但需要手動開啟
-            debug_console("已啟用開發者工具設定")
+            main_window_console("已啟用開發者工具設定")
         except Exception as e:
-            warning_console(f"啟用開發者工具設定失敗: {e}")
+            main_window_console(f"啟用開發者工具設定失敗: {e}", level=LogLevel.WARNING)
         
         # 創建 API 和 WebChannel
         self.api_instance = Api(self.web_view.page(), self.root_dir)
@@ -86,7 +96,7 @@ class MainWindow(QMainWindow):
         try:
             # 使用 html_content.py 中的邏輯
             html_str = get_html_content()
-            info_console(f"載入 HTML 內容，長度: {len(html_str)}")
+            main_window_console(f"載入 HTML 內容，長度: {len(html_str)}", level=LogLevel.INFO)
             
             # 設定基礎 URL
             base_url = QUrl.fromLocalFile(self.root_dir + os.sep)
@@ -96,7 +106,7 @@ class MainWindow(QMainWindow):
             self.web_view.loadFinished.connect(self.on_load_finished)
             
         except Exception as e:
-            error_console(f"載入 HTML 內容失敗: {e}")
+            main_window_console(f"載入 HTML 內容失敗: {e}", level=LogLevel.ERROR)
     
     def on_load_finished(self, ok):
         """頁面載入完成處理"""
@@ -141,9 +151,9 @@ class MainWindow(QMainWindow):
         """獲取版本注入腳本"""
         # 動態重新導入模組以獲取最新版本號
         import importlib
-        import config.constants
-        importlib.reload(config.constants)
-        from config.constants import APP_VERSION, APP_VERSION_HOME
+        import scripts.config.constants as config_constants
+        importlib.reload(config_constants)
+        from scripts.config.constants import APP_VERSION, APP_VERSION_HOME
         
         return f"""
         (function(){{
@@ -208,7 +218,7 @@ class MainWindow(QMainWindow):
         """建立系統托盤圖示，若系統支援通知"""
         try:
             if not QSystemTrayIcon.isSystemTrayAvailable():
-                debug_console("系統托盤不可用，通知將退回至主控台")
+                main_window_console("系統托盤不可用，通知將退回至主控台")
                 return None
             icon = QIcon(icon_path) if icon_path else self.windowIcon()
             if icon.isNull():
@@ -219,7 +229,7 @@ class MainWindow(QMainWindow):
             tray.setVisible(True)
             return tray
         except Exception as e:
-            warning_console(f"初始化托盤圖示失敗: {e}")
+            main_window_console(f"初始化托盤圖示失敗: {e}", level=LogLevel.WARNING)
             return None
 
     def _show_notification(self, title, message):
@@ -230,20 +240,99 @@ class MainWindow(QMainWindow):
             if self.tray_icon and self.tray_icon.isVisible() and self.tray_icon.supportsMessages():
                 self.tray_icon.showMessage(title, message, QSystemTrayIcon.Information, 5000)
             else:
-                info_console(f"通知: {title} - {message}")
+                main_window_console(f"通知: {title} - {message}", level=LogLevel.INFO)
         except Exception as e:
-            warning_console(f"顯示桌面通知失敗: {e}")
+            main_window_console(f"顯示桌面通知失敗: {e}", level=LogLevel.WARNING)
     
     def on_info_ready(self, info):
         """影片資訊準備就緒"""
         try:
             import json
-            safe_info = json.dumps(info, ensure_ascii=False)
-            self.web_view.page().runJavaScript(
-                f"(function(){{ if (window.__onVideoInfo){{ window.__onVideoInfo({safe_info}); }} }})();"
-            )
+            import traceback
+            
+            main_window_console(f"on_info_ready 被調用，info 類型: {type(info)}")
+            
+            if not isinstance(info, dict):
+                main_window_console(f"info 不是字典類型: {type(info)}", level=LogLevel.ERROR)
+                return
+            
+            # 檢查是否為播放清單
+            is_playlist = info.get('is_playlist', False)
+            main_window_console(f"是否為播放清單: {is_playlist}")
+            
+            if is_playlist:
+                main_window_console(f"播放清單標題: {info.get('playlist_title', 'N/A')}")
+                main_window_console(f"播放清單影片數量: {info.get('video_count', 0)}")
+                videos = info.get('videos', [])
+                main_window_console(f"播放清單影片列表長度: {len(videos) if videos else 0}")
+            
+            # 清理不可序列化的數據
+            def clean_for_json(obj):
+                """遞歸清理對象，確保可以 JSON 序列化"""
+                if isinstance(obj, dict):
+                    return {k: clean_for_json(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [clean_for_json(item) for item in obj]
+                elif isinstance(obj, (str, int, float, bool, type(None))):
+                    return obj
+                else:
+                    # 嘗試轉換為字符串
+                    try:
+                        return str(obj)
+                    except:
+                        return None
+            
+            cleaned_info = clean_for_json(info)
+            main_window_console(f"數據清理完成")
+            
+            try:
+                safe_info = json.dumps(cleaned_info, ensure_ascii=False)
+                main_window_console(f"JSON 序列化成功，長度: {len(safe_info)}")
+            except Exception as json_err:
+                main_window_console(f"JSON 序列化失敗: {json_err}", level=LogLevel.ERROR)
+                main_window_console(f"JSON 序列化錯誤詳情:\n{traceback.format_exc()}")
+                return
+            
+            # 構建 JavaScript 代碼
+            js_code = f"""
+            (function(){{ 
+                console.log('[主視窗->前端] 準備調用 window.__onVideoInfo'); 
+                console.log('[主視窗->前端] window.__onVideoInfo 類型:', typeof window.__onVideoInfo);
+                if (window.__onVideoInfo && typeof window.__onVideoInfo === 'function'){{ 
+                    console.log('[主視窗->前端] window.__onVideoInfo 存在，開始調用'); 
+                    try {{
+                        window.__onVideoInfo({safe_info}); 
+                        console.log('[主視窗->前端] window.__onVideoInfo 調用完成'); 
+                    }} catch(e) {{
+                        console.error('[主視窗->前端] 調用 window.__onVideoInfo 時出錯:', e);
+                        console.error('[主視窗->前端] 錯誤堆疊:', e.stack);
+                    }}
+                }} else {{ 
+                    console.error('[主視窗->前端] window.__onVideoInfo 不存在或不是函數！'); 
+                    console.error('[主視窗->前端] window 對象:', Object.keys(window).filter(k => k.includes('VideoInfo')));
+                }} 
+            }})();
+            """
+            
+            main_window_console(f"準備執行 JavaScript，代碼長度: {len(js_code)}")
+            
+            # 使用 QTimer 確保在事件循環中執行
+            from PySide6.QtCore import QTimer
+            def execute_js():
+                try:
+                    self.web_view.page().runJavaScript(js_code)
+                    main_window_console(f"JavaScript 已執行")
+                except Exception as js_err:
+                    main_window_console(f"執行 JavaScript 失敗: {js_err}", level=LogLevel.ERROR)
+                    main_window_console(f"JavaScript 執行錯誤詳情:\n{traceback.format_exc()}")
+            
+            # 立即執行，但使用單次定時器確保在事件循環中
+            QTimer.singleShot(0, execute_js)
+            
         except Exception as e:
-            error_console(f"發送影片資訊失敗: {e}")
+            main_window_console(f"發送影片資訊失敗: {e}", level=LogLevel.ERROR)
+            import traceback
+            main_window_console(f"錯誤詳情:\n{traceback.format_exc()}")
     
     def on_info_error(self, error_msg):
         """影片資訊錯誤"""
@@ -254,16 +343,16 @@ class MainWindow(QMainWindow):
                 f"(function(){{ if (window.__onVideoInfoError){{ window.__onVideoInfoError({safe_error}); }} }})();"
             )
         except Exception as e:
-            error_console(f"發送錯誤資訊失敗: {e}")
+            main_window_console(f"發送錯誤資訊失敗: {e}", level=LogLevel.ERROR)
     
     def start_background_version_check(self):
         """啟動背景版本檢查"""
         def check_version_in_background():
             try:
-                info_console("在背景執行緒中檢查 yt-dlp 版本...")
+                main_window_console("在背景執行緒中檢查 yt-dlp 版本...", level=LogLevel.INFO)
                 self.api_instance.check_and_update_ytdlp()
             except Exception as e:
-                error_console(f"背景版本檢查失敗: {e}")
+                main_window_console(f"背景版本檢查失敗: {e}", level=LogLevel.ERROR)
         
         import threading
         version_check_thread = threading.Thread(target=check_version_in_background, daemon=True)
@@ -272,12 +361,12 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """視窗關閉事件"""
         try:
-            info_console("主視窗即將關閉，正在清理資源...")
+            main_window_console("主視窗即將關閉，正在清理資源...", level=LogLevel.INFO)
             if self.api_instance:
                 self.api_instance.close_settings()
             event.accept()
         except Exception as e:
-            error_console(f"關閉視窗時出錯: {e}")
+            main_window_console(f"關閉視窗時出錯: {e}", level=LogLevel.ERROR)
             event.accept()
 
 def create_app(root_dir):

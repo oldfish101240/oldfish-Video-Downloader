@@ -1,8 +1,10 @@
  #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-主程式入口點(隱藏 console)
+主程式入口點
 """
+
+print("main.pyw is starting...")
 
 import os
 import sys
@@ -12,23 +14,23 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
 # 確保使用內嵌的 Python 環境
-python_embed_dir = os.path.join(current_dir, 'python_embed')
+python_embed_dir = os.path.join(current_dir, 'lib', 'python_embed')
 if python_embed_dir not in sys.path:
     sys.path.insert(0, python_embed_dir)
 
-from ui.main_window import create_app
-from utils.logger import debug_console, info_console, error_console, warning_console, set_log_level, LogLevel
-from utils.file_utils import ensure_directories
+from scripts.ui.main_window import create_app
+from scripts.utils.logger import debug_console, info_console, error_console, warning_console, set_log_level, LogLevel
+from scripts.utils.file_utils import ensure_directories
+from scripts.config.constants import DEFAULT_LOG_LEVEL
 
 def main():
     """主函數"""
     try:
-        # 設定日誌等級（可根據需要調整）
-        # DEBUG: 顯示所有日誌
-        # INFO: 顯示一般資訊和以上
-        # WARNING: 顯示警告和錯誤
-        # ERROR: 只顯示錯誤
-        set_log_level(LogLevel.DEBUG)
+        # 設定日誌等級（改為從 config.constants 讀取預設值）
+        # 可在 constants.py 中調整 DEFAULT_LOG_LEVEL
+        # constants.DEFAULT_LOG_LEVEL 使用字串，避免 constants.py 直接 import 專案模組造成路徑問題
+        level = getattr(LogLevel, str(DEFAULT_LOG_LEVEL).upper(), LogLevel.INFO)
+        set_log_level(level)
         
         # 獲取根目錄
         ROOT_DIR = os.path.dirname(os.path.abspath(__file__))

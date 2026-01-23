@@ -4,20 +4,30 @@
 主要 API 類別模組
 """
 
+print("api.py is starting...")
+
 import os
 import sys
 import json
 import threading
 import subprocess
 import yt_dlp
+
+# 添加父目錄到路徑，以便導入其他模組
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)  # main/scripts
+root_dir = os.path.dirname(parent_dir)  # main
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from PySide6.QtCore import QObject, Slot, Signal
 from PySide6.QtWidgets import QFileDialog
-from utils.logger import debug_console, info_console, error_console, warning_console
-from utils.file_utils import safe_path_join, get_download_path, resolve_relative_path
-from utils.version_utils import compare_versions
-from config.settings import SettingsManager
-from core.video_info import extract_video_info
-from core.downloader import Downloader
+from scripts.utils.logger import api_console, download_console, video_info_console, LogLevel
+from scripts.utils.file_utils import safe_path_join, get_download_path, resolve_relative_path, get_deno_path
+from scripts.utils.version_utils import compare_versions
+from scripts.config.settings import SettingsManager
+from .video_info import extract_video_info, is_playlist_url, extract_playlist_info, get_video_qualities_and_formats
+from .downloader import Downloader, DownloadScheduler
 
 class Api(QObject):
     """主要 API 類別"""
@@ -41,6 +51,7 @@ class Api(QObject):
         self.task_in_postprocessing = {}
         self.task_download_paths = {}  # 追蹤每個任務的下載路徑
         self.notification_handler = None
+        self._last_progress_percent = {}
         
         # 初始化組件
         self.settings_manager = SettingsManager(root_dir)
@@ -48,6 +59,19 @@ class Api(QObject):
             root_dir,
             progress_callback=self._download_progress_hook,
             complete_callback=self._notify_download_complete_safely
+        )
+
+        # 全域下載排程器：同時下載上限/重試次數（先用設定或預設值）
+        try:
+            settings = self.settings_manager.load_settings()
+            max_c = int(settings.get('maxConcurrentDownloads', 3) or 3)
+        except Exception:
+            max_c = 3
+        self.scheduler = DownloadScheduler(
+            self.downloader,
+            max_concurrent=max_c,
+            retry_count=3,
+            status_callback=self._scheduler_status_update,
         )
         
         # 連接信號
@@ -88,46 +112,203 @@ class Api(QObject):
     
     @Slot(str, result=str)
     def start_get_video_info(self, url):
-        """開始獲取影片資訊"""
+        """開始獲取影片資訊（自動檢測播放清單）"""
         def task():
             try:
-                info = extract_video_info(url, self.root_dir)
-                if info:
-                    self.infoReady.emit(info)
+                api_console(f"start_get_video_info 被調用，URL: {url}")
+                # 檢測是否為播放清單
+                if is_playlist_url(url):
+                    api_console("檢測到播放清單URL", level=LogLevel.INFO)
+                    api_console(f"確認為播放清單URL，開始提取...")
+                    playlist_info = extract_playlist_info(url, self.root_dir)
+                    api_console(f"播放清單資訊提取完成，結果: {playlist_info is not None}")
+                    if playlist_info:
+                        api_console(f"播放清單資訊結構: is_playlist={playlist_info.get('is_playlist')}, video_count={playlist_info.get('video_count')}")
+                        api_console(f"準備發送 infoReady 信號...")
+                        self.infoReady.emit(playlist_info)
+                        api_console(f"infoReady 信號已發送")
+                    else:
+                        api_console(f"播放清單資訊為 None，發送錯誤信號")
+                        self.infoError.emit("無法獲取播放清單資訊")
                 else:
-                    self.infoError.emit("無法獲取影片資訊")
+                    api_console(f"不是播放清單URL，按單個影片處理")
+                    info = extract_video_info(url, self.root_dir)
+                    if info:
+                        api_console(f"影片資訊提取完成，發送 infoReady 信號")
+                        self.infoReady.emit(info)
+                    else:
+                        api_console(f"影片資訊為 None，發送錯誤信號")
+                        self.infoError.emit("無法獲取影片資訊")
             except Exception as e:
+                api_console(f"start_get_video_info 發生異常: {e}", level=LogLevel.ERROR)
+                api_console(f"異常詳情: {type(e).__name__}: {str(e)}")
+                import traceback
+                api_console(f"完整堆疊:\n{traceback.format_exc()}")
                 self.infoError.emit(str(e))
         
+        api_console(f"啟動背景執行緒處理 URL: {url}")
         threading.Thread(target=task, daemon=True).start()
         return 'started'
     
     @Slot(str, result='QVariant')
+    def get_playlist_info(self, url):
+        """獲取播放清單資訊"""
+        try:
+            api_console(f"獲取播放清單資訊: {url}", level=LogLevel.INFO)
+            playlist_info = extract_playlist_info(url, self.root_dir)
+            return playlist_info
+        except Exception as e:
+            api_console(f"獲取播放清單資訊失敗: {e}", level=LogLevel.ERROR)
+            return None
+    
+    @Slot(str, result='QVariant')
+    def get_video_qualities_formats(self, url):
+        """獲取單個影片的畫質和格式選項（用於播放清單）"""
+        try:
+            return get_video_qualities_and_formats(url, self.root_dir)
+        except Exception as e:
+            api_console(f"獲取影片畫質和格式失敗: {e}", level=LogLevel.ERROR)
+            return {
+                'qualities': [{'label': '1080p', 'ratio': ''}, {'label': '720p', 'ratio': ''}, {'label': '480p', 'ratio': ''}],
+                'formats': [{'value': 'mp4', 'label': 'mp4', 'desc': '影片'}, {'value': 'mp3', 'label': 'mp3', 'desc': '音訊'}]
+            }
+
+    @Slot(str, result=str)
+    def start_playlist_qualities_fetch(self, videos_json):
+        """播放清單：背景逐支提取每部影片可用畫質（eager）。
+
+        videos_json: JSON字串，格式：
+          [
+            {"index": 0, "url": "https://..."},
+            ...
+          ]
+
+        會逐支回推前端：
+          window.__onPlaylistVideoQualities(index, qualitiesArray)
+        """
+        try:
+            items = json.loads(videos_json or '[]')
+            if not isinstance(items, list):
+                return "FAILED: invalid payload"
+
+            # 受控併發，避免同時開太多 yt-dlp extract_info
+            max_concurrent = 4
+            sem = threading.Semaphore(max_concurrent)
+
+            def worker(idx, url):
+                if url is None:
+                    return
+                u = str(url).strip()
+                if not u:
+                    return
+                sem.acquire()
+                try:
+                    result = get_video_qualities_and_formats(u, self.root_dir) or {}
+                    qualities = result.get('qualities') or []
+                    # 用 JS 物件回推（_safe_eval_js 會把 list 轉成字串，不適合）
+                    payload = json.dumps(qualities, ensure_ascii=False)
+                    js = f"(function(){{ try{{ if (window.__onPlaylistVideoQualities){{ window.__onPlaylistVideoQualities({int(idx)}, {payload}); }} }}catch(e){{ console.error(e); }} }})();"
+                    self._eval_js(js)
+                except Exception as e:
+                    # 失敗時回推空陣列（前端可維持預設）
+                    try:
+                        js = f"(function(){{ try{{ if (window.__onPlaylistVideoQualities){{ window.__onPlaylistVideoQualities({int(idx)}, []); }} }}catch(e){{}} }})();"
+                        self._eval_js(js)
+                    except Exception:
+                        pass
+                    video_info_console(f"提取畫質失敗 idx={idx}: {e}", level=LogLevel.ERROR)
+                finally:
+                    try:
+                        sem.release()
+                    except Exception:
+                        pass
+
+            started = 0
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                idx = it.get('index')
+                url = it.get('url')
+                if idx is None or url is None:
+                    continue
+                t = threading.Thread(target=worker, args=(idx, url), daemon=True)
+                t.start()
+                started += 1
+
+            return f"OK:{started}"
+        except Exception as e:
+            api_console(f"start_playlist_qualities_fetch 失敗: {e}", level=LogLevel.ERROR)
+            return f"FAILED:{e}"
+    
+    @Slot(str, result='QVariant')
     def get_video_info(self, url):
         """獲取影片資訊"""
-        info_console(f"取得影片資訊: {url}")
+        api_console(f"取得影片資訊: {url}", level=LogLevel.INFO)
         try:
             # 直接使用 yt-dlp 獲取資訊，與原始版本一致
             import yt_dlp
             
             # 設定 FFMPEG 路徑（使用相對路徑）
-            ffmpeg_path = safe_path_join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
-            debug_console(f"[API] ffmpeg 路徑: {ffmpeg_path}")
-            debug_console(f"[API] ffmpeg 存在: {os.path.exists(ffmpeg_path)}")
+            ffmpeg_path = safe_path_join(self.root_dir, "lib", "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
+            api_console(f"ffmpeg 路徑: {ffmpeg_path}")
+            api_console(f"ffmpeg 存在: {os.path.exists(ffmpeg_path)}")
             
-            # 設定 yt-dlp 選項
+            # 設定 yt-dlp 選項（不限制格式，以獲取所有可用格式）
             ydl_opts = {
-                'quiet': True,
+                'quiet': False,  # 改為 False 以查看警告信息
                 'simulate': True,
-                'format': 'best[height<=1080]/bestaudio/best',
-                'ffmpeg_location': ffmpeg_path,
+                'skip_download': True,
+                'no_playlist': True,  # 確保只提取單個視頻
+                # 不設定 format，以獲取所有可用格式
             }
-            debug_console(f"[API] yt-dlp 選項: simulate=True, format='best[height<=1080]/bestaudio/best'")
-            debug_console("[API] 即將呼叫 yt-dlp.extract_info(download=False)")
+            
+            # 設定 ffmpeg 路徑（如果存在）
+            if os.path.exists(ffmpeg_path):
+                ydl_opts['ffmpeg_location'] = ffmpeg_path
+            
+            # 配置 Deno 作為外部 JavaScript 執行時（用於 YouTube 支援）
+            deno_path = get_deno_path(self.root_dir)
+            api_console(f"Deno 路徑查找結果: {deno_path}")
+            if deno_path and os.path.exists(deno_path):
+                ydl_opts['js_runtimes'] = {'deno': {'path': deno_path}}
+                api_console(f"已配置 Deno 路徑: {deno_path}")
+                api_console(f"js_runtimes 配置: {ydl_opts.get('js_runtimes')}")
+            else:
+                api_console(f"Deno 未找到或不存在: {deno_path}")
+                if deno_path:
+                    api_console(f"Deno 路徑存在性檢查: {os.path.exists(deno_path)}")
+            
+            api_console(f"yt-dlp 選項: simulate=True")
+            api_console("即將呼叫 yt-dlp.extract_info(download=False)")
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(url, download=False)
-            debug_console("[API] yt-dlp.extract_info 完成")
+            api_console("yt-dlp.extract_info 完成")
+            
+            # 詳細調試信息
+            api_console(f"info_dict 類型: {type(info_dict)}")
+            api_console(f"info_dict 鍵: {list(info_dict.keys())[:10] if isinstance(info_dict, dict) else 'N/A'}")
+            
+            # 檢查是否成功獲取格式列表
+            formats_list = info_dict.get('formats', [])
+            formats_count = len(formats_list)
+            api_console(f"獲取到 {formats_count} 個格式")
+            
+            if formats_count == 0:
+                api_console("警告：未獲取到任何格式，可能是 JavaScript runtime 配置問題", level=LogLevel.WARNING)
+                # 打印 info_dict 的部分內容以便調試
+                api_console(f"info_dict 部分內容: title={info_dict.get('title', 'N/A')}, id={info_dict.get('id', 'N/A')}")
+            else:
+                # 打印前幾個格式的詳細信息
+                api_console(f"前 5 個格式的詳細信息:")
+                for i, fmt in enumerate(formats_list[:5]):
+                    fmt_id = fmt.get('format_id', 'N/A')
+                    height = fmt.get('height', 'N/A')
+                    width = fmt.get('width', 'N/A')
+                    ext = fmt.get('ext', 'N/A')
+                    vcodec = fmt.get('vcodec', 'N/A')
+                    acodec = fmt.get('acodec', 'N/A')
+                    api_console(f"  格式 {i+1}: id={fmt_id}, height={height}, width={width}, ext={ext}, vcodec={vcodec}, acodec={acodec}")
             
             title = info_dict.get('title', '無標題影片')
             duration_seconds = info_dict.get('duration')
@@ -155,33 +336,111 @@ class Api(QObject):
                             thumbnail = thumbs[-1].get('url') or ''
                         except Exception:
                             thumbnail = ''
-            debug_console(f"[API] 取得縮圖 URL: {bool(thumbnail)}")
+            api_console(f"取得縮圖 URL: {bool(thumbnail)}")
             
-            # 處理畫質和格式
+            # 處理畫質和格式（使用與 extract_video_info 相同的邏輯）
+            seen_heights = set()
             qualities = []
-            formats = []
-            seen_qualities = set()
             
-            for fmt in info_dict.get('formats', []):
+            def _quality_label_from_height(h):
+                """高度轉為大眾常見畫質"""
+                try:
+                    h_int = int(h)
+                except Exception:
+                    return f"{h}p"
+                if h_int >= 4320:
+                    return "4320p(8K)"
+                if h_int >= 2160:
+                    return "2160p(4K)"
+                if h_int >= 1440:
+                    return "1440p(2K)"
+                if h_int >= 1080:
+                    return "1080p"
+                if h_int >= 720:
+                    return "720p"
+                if h_int >= 480:
+                    return "480p"
+                return "360p"
+            
+            # 從 formats 中提取畫質
+            api_console(f"開始提取畫質，formats_list 長度: {len(formats_list)}")
+            
+            # 打印所有格式的詳細信息
+            api_console(f"所有格式的詳細信息:")
+            for i, fmt in enumerate(formats_list):
+                fmt_id = fmt.get('format_id', 'N/A')
+                height = fmt.get('height', 'N/A')
+                width = fmt.get('width', 'N/A')
+                ext = fmt.get('ext', 'N/A')
+                vcodec = fmt.get('vcodec', 'N/A')
+                acodec = fmt.get('acodec', 'N/A')
+                api_console(f"  格式 {i+1}: id={fmt_id}, height={height}, width={width}, ext={ext}, vcodec={vcodec}, acodec={acodec}")
+            
+            height_count = 0
+            filtered_count = 0
+            mhtml_count = 0
+            for fmt in formats_list:
+                ext = fmt.get('ext', '').lower()
+                # 過濾掉縮圖格式（mhtml）
+                if ext == 'mhtml':
+                    mhtml_count += 1
+                    api_console(f"  跳過縮圖格式: {fmt.get('format_id', 'N/A')} (ext=mhtml)")
+                    continue
+                
                 height = fmt.get('height')
-                if height and height not in seen_qualities:
-                    qualities.append(f"{height}p")
-                    seen_qualities.add(height)
+                vcodec = fmt.get('vcodec', 'none')
+                # 只處理有視頻編碼的格式（vcodec != 'none'）
+                if vcodec == 'none':
+                    api_console(f"  跳過無視頻編碼格式: {fmt.get('format_id', 'N/A')} (vcodec=none)")
+                    continue
+                
+                if height is not None:
+                    height_count += 1
+                    api_console(f"  處理視頻格式: height={height}, vcodec={vcodec}, ext={ext}")
+                    # 過濾掉低於360p的畫質選項
+                    if height >= 360 and height not in seen_heights:
+                        label = _quality_label_from_height(height)
+                        qualities.append({'label': label, 'ratio': ''})
+                        seen_heights.add(height)
+                        filtered_count += 1
+                        api_console(f"  添加畫質: {label} (原始高度: {height})")
+                    elif height < 360:
+                        api_console(f"  跳過低畫質: {height}p (低於360p)")
+                    else:
+                        api_console(f"  跳過重複畫質: {height}p")
+                else:
+                    api_console(f"  跳過無高度格式: {fmt.get('format_id', 'N/A')} (height=None)")
             
-            # 添加音訊格式
-            format_types = ["影片", "音訊"]
+            api_console(f"畫質提取統計: 總格式數={len(formats_list)}, 縮圖格式={mhtml_count}, 有高度的視頻格式={height_count}, 過濾後畫質數={filtered_count}")
             
-            return {
+            # 由高到低排序
+            qualities.sort(key=lambda q: int(''.join(ch for ch in q['label'] if ch.isdigit()) or '0'), reverse=True)
+            api_console(f"最終提取到 {len(qualities)} 個畫質選項: {[q['label'] for q in qualities]}")
+            
+            # 格式：與 extract_video_info 一致
+            has_any_audio = any((f.get('acodec') and f.get('acodec') != 'none') for f in formats_list)
+            formats_out = [{'value': 'mp4', 'label': 'mp4', 'desc': '影片'}]
+            if has_any_audio:
+                formats_out.append({'value': 'mp3', 'label': 'mp3', 'desc': '音訊'})
+            
+            result = {
                 'title': title,
                 'duration': duration,
                 'uploader': uploader,
                 'thumb': thumbnail,  # 使用原始縮圖 URL
                 'qualities': qualities,
-                'format_types': format_types
+                'formats': formats_out
             }
             
+            api_console(f"返回結果: title={title}, qualities數量={len(qualities)}, formats數量={len(formats_out)}")
+            api_console(f"返回的畫質列表: {[q['label'] for q in qualities]}")
+            
+            return result
+            
         except Exception as e:
-            error_console(f"獲取影片資訊失敗: {e}")
+            api_console(f"獲取影片資訊失敗: {e}", level=LogLevel.ERROR)
+            import traceback
+            api_console(f"錯誤堆疊: {traceback.format_exc()}")
             return None
     
     def _eval_js(self, script):
@@ -205,12 +464,12 @@ class Api(QObject):
             js_call = f"{function_name}({', '.join(safe_args)})"
             self._eval_js(js_call)
         except Exception as e:
-            warning_console(f"安全JavaScript執行失敗: {e}")
+            api_console(f"安全JavaScript執行失敗: {e}", level=LogLevel.WARNING)
             try:
                 safe_script = f"{function_name}()"
                 self._eval_js(safe_script)
             except Exception as e2:
-                warning_console(f"後備JavaScript執行也失敗: {e2}")
+                api_console(f"後備JavaScript執行也失敗: {e2}", level=LogLevel.WARNING)
     
     @Slot(str)
     def _on_eval_js_requested(self, script):
@@ -218,7 +477,7 @@ class Api(QObject):
         try:
             self.page.runJavaScript(script)
         except Exception as e:
-            error_console(f"JavaScript執行失敗: {e}")
+            api_console(f"JavaScript執行失敗: {e}", level=LogLevel.ERROR)
     
     def _on_update_dialog_requested(self, version_info):
         """處理更新對話框請求（在主線程中執行）"""
@@ -229,17 +488,17 @@ class Api(QObject):
                 self.show_update_dialog(version_info)
                 current_version = version_info.get('current_version', '')
                 latest_version = version_info.get('latest_version', '')
-                info_console(f"已顯示 yt-dlp 更新對話框（目前版本: {current_version}, 最新版本: {latest_version}）")
+                api_console(f"已顯示 yt-dlp 更新對話框（目前版本: {current_version}, 最新版本: {latest_version}）", level=LogLevel.INFO)
             QTimer.singleShot(500, show_dialog)  # 500ms 後執行
         except Exception as e:
-            error_console(f"顯示更新對話框失敗: {e}")
+            api_console(f"顯示更新對話框失敗: {e}", level=LogLevel.ERROR)
     
     def _download_progress_hook(self, task_id, d):
         """下載進度回調"""
         try:
             status_key = d.get('status')
             if not status_key:
-                debug_console(f"【任務{task_id}】進度回調缺少 status 欄位")
+                download_console(f"【任務{task_id}】進度回調缺少 status 欄位")
                 return
             
             if status_key == 'downloading':
@@ -273,7 +532,12 @@ class Api(QObject):
                     if eta_str:
                         status = f"{status} - 剩餘 {eta_str}"
                 
-                info_console(f"[進度] 任務{task_id}: {percent:.1f}% - {status}")
+                download_console(f"[進度] 任務{task_id}: {percent:.1f}% - {status}", level=LogLevel.INFO)
+                try:
+                    with self._lock:
+                        self._last_progress_percent[str(task_id)] = float(percent)
+                except Exception:
+                    pass
                 # 傳遞當前檔案路徑（若可得）以保持與舊版一致
                 file_arg = d.get('filename') or ''
                 safe_file_arg = (file_arg or '').replace('\\', '/')
@@ -281,19 +545,28 @@ class Api(QObject):
                 self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status, '', safe_file_arg)
             elif status_key == 'finished':
                 try:
-                    info_console(f"任務 {task_id} 已完成")
+                    download_console(f"任務 {task_id} 已完成", level=LogLevel.INFO)
                     file_arg = d.get('filename') or ''
                     safe_file_arg = (file_arg or '').replace('\\', '/')
                     self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file_arg)
                 except Exception as e:
-                    error_console(f"完成進度回報失敗: {e}")
+                    download_console(f"完成進度回報失敗: {e}", level=LogLevel.ERROR)
             else:
                 # 處理其他未知狀態
-                debug_console(f"【任務{task_id}】未知狀態: {status_key}")
+                download_console(f"【任務{task_id}】未知狀態: {status_key}")
         except KeyError as e:
-            error_console(f"【任務{task_id}】進度回調缺少必要欄位: {e}")
+            download_console(f"【任務{task_id}】進度回調缺少必要欄位: {e}", level=LogLevel.ERROR)
         except Exception as e:
-            error_console(f"【任務{task_id}】進度回調處理失敗: {e}")
+            download_console(f"【任務{task_id}】進度回調處理失敗: {e}", level=LogLevel.ERROR)
+
+    def _scheduler_status_update(self, task_id, status_text):
+        """排程器狀態更新（例如重試中），只更新狀態文字，不重置進度條。"""
+        try:
+            with self._lock:
+                p = self._last_progress_percent.get(str(task_id), 0.0)
+            self._safe_eval_js("window.updateDownloadProgress", int(task_id), float(p), str(status_text), '', '')
+        except Exception:
+            pass
     
     def _notify_download_complete_safely(self, task_id, url, error=None, file_path=None):
         """安全地通知下載完成"""
@@ -310,7 +583,7 @@ class Api(QObject):
                 if file_path:
                     with self._lock:
                         self.task_download_paths[str(task_id)] = file_path
-                    debug_console(f"任務 {task_id} 最終檔案路徑已記錄: {file_path}")
+                    download_console(f"任務 {task_id} 最終檔案路徑已記錄: {file_path}")
                 
                 # 與舊版一致，將最終檔案路徑傳給前端以啟用「開啟資料夾」按鈕
                 safe_file = (file_path or '').replace('\\', '/')
@@ -323,11 +596,11 @@ class Api(QObject):
                     try:
                         self._safe_eval_js("window.__ofShowToast", "下載完成", f"任務 {task_id} 已完成")
                     except Exception as toast_err:
-                        debug_console(f"顯示 Toast 失敗: {toast_err}")
+                        download_console(f"顯示 Toast 失敗: {toast_err}")
                     self._send_notification("下載完成", f"任務 {task_id} 已完成")
                     
         except Exception as e:
-            warning_console(f"通知下載完成失敗: {e}")
+            download_console(f"通知下載完成失敗: {e}", level=LogLevel.WARNING)
 
     @Slot(result=str)
     def choose_folder(self):
@@ -341,13 +614,13 @@ class Api(QObject):
                 return directory
             return ''
         except Exception as e:
-            error_console(f"選擇資料夾失敗: {e}")
+            api_console(f"選擇資料夾失敗: {e}", level=LogLevel.ERROR)
             return ''
     
     @Slot(str, result=str)
     def download(self, url):
         """下載按鈕被點擊"""
-        info_console(f"收到下載請求: {url}")
+        download_console(f"收到下載請求: {url}", level=LogLevel.INFO)
         return "下載功能尚未實作"
     
     def _check_file_exists(self, url, quality, format_type, downloads_dir, add_resolution):
@@ -355,13 +628,22 @@ class Api(QObject):
         try:
             # 先獲取視頻信息以確定標題和高度
             import yt_dlp
-            ffmpeg_path = safe_path_join(self.root_dir, "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
+            ffmpeg_path = safe_path_join(self.root_dir, "lib", "ffmpeg-7.1.1-essentials_build", "ffmpeg-7.1.1-essentials_build", "bin", "ffmpeg.exe")
             ydl_opts = {
                 'quiet': True,
                 'simulate': True,
                 'extract_flat': False,
-                'ffmpeg_location': ffmpeg_path,
             }
+            
+            # 設定 ffmpeg 路徑（如果存在）
+            if os.path.exists(ffmpeg_path):
+                ydl_opts['ffmpeg_location'] = ffmpeg_path
+            
+            # 配置 Deno 作為外部 JavaScript 執行時（用於 YouTube 支援）
+            deno_path = get_deno_path(self.root_dir)
+            if deno_path:
+                ydl_opts['js_runtimes'] = {'deno': {'path': deno_path}}
+                api_console(f"已配置 Deno 路徑: {deno_path}")
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(url, download=False)
@@ -430,14 +712,74 @@ class Api(QObject):
             
             return None
         except Exception as e:
-            debug_console(f"檢查文件是否存在時出錯: {e}")
+            api_console(f"檢查文件是否存在時出錯: {e}")
             return None
+    
+    @Slot(str, result=str)
+    def start_batch_download(self, video_data_json):
+        """批量下載（主要給播放清單使用）
+        video_data_json: JSON字串，格式：
+          [
+            { "id": 123, "url": "...", "quality": "1080p", "format": "mp4" },
+            ...
+          ]
+
+        - **重要**：`id` 會直接當作任務ID回報進度/完成，必須與前端佇列對齊。
+        """
+        try:
+            video_list = json.loads(video_data_json or '[]')
+            if not isinstance(video_list, list):
+                return "批量下載失敗: 參數格式錯誤（需為 JSON 陣列）"
+
+            download_console(f"開始批量下載，共 {len(video_list)} 部影片", level=LogLevel.INFO)
+
+            def delayed_start(delay_s, tid, u, q, f):
+                import time
+                try:
+                    if delay_s and delay_s > 0:
+                        time.sleep(delay_s)
+                    # 直接使用前端提供的 task id（不可亂轉換，避免對不到 UI）
+                    self.start_download(int(tid), u, q, f)
+                except Exception as e:
+                    download_console(f"批量下載啟動失敗(task_id={tid}): {e}", level=LogLevel.ERROR)
+                    try:
+                        self._notify_download_complete_safely(int(tid), u, error=str(e))
+                    except Exception:
+                        pass
+
+            started = 0
+            for idx, item in enumerate(video_list):
+                if not isinstance(item, dict):
+                    continue
+                url = (item.get('url') or '').strip()
+                if not url:
+                    continue
+                task_id = item.get('id')
+                if task_id is None:
+                    # 若前端未提供，退回用序號（仍維持 int）
+                    task_id = idx
+                quality = item.get('quality', '1080p')
+                format_type = item.get('format', 'mp4')
+
+                # 以背景執行緒做簡單排程，避免一次啟動太多 yt-dlp 實例
+                t = threading.Thread(
+                    target=delayed_start,
+                    args=(idx * 0.5, task_id, url, quality, format_type),
+                    daemon=True,
+                )
+                t.start()
+                started += 1
+
+            return f"已開始批量下載 {started} 部影片"
+        except Exception as e:
+            download_console(f"批量下載失敗: {e}", level=LogLevel.ERROR)
+            return f"批量下載失敗: {e}"
     
     @Slot(int, str, str, str, result=str)
     def start_download(self, task_id, url, quality, format_type):
         """開始下載"""
         try:
-            info_console(f"開始下載任務 {task_id}: {url}")
+            download_console(f"開始下載任務 {task_id}: {url}", level=LogLevel.INFO)
             # 規範化前端傳入的格式與畫質
             fmt = (format_type or '').strip().lower()
             # 對齊下載器分支：將具體副檔名映射為語義分類
@@ -467,12 +809,12 @@ class Api(QObject):
             
             # 決定下載目錄
             resolved_download_dir = get_download_path(self.root_dir, self.settings_manager)
-            info_console(f"使用下載路徑: {resolved_download_dir}")
+            download_console(f"使用下載路徑: {resolved_download_dir}", level=LogLevel.INFO)
             
             try:
                 os.makedirs(resolved_download_dir, exist_ok=True)
             except Exception as e:
-                error_console(f"創建下載資料夾失敗，改用預設: {e}")
+                download_console(f"創建下載資料夾失敗，改用預設: {e}", level=LogLevel.ERROR)
                 resolved_download_dir = safe_path_join(self.root_dir, 'downloads')
                 os.makedirs(resolved_download_dir, exist_ok=True)
 
@@ -481,7 +823,7 @@ class Api(QObject):
                                                    resolved_download_dir, add_resolution)
             if existing_file:
                 # 文件已存在，返回特殊狀態讓前端顯示確認對話框
-                debug_console(f"發現已存在的文件: {existing_file}")
+                download_console(f"發現已存在的文件: {existing_file}")
                 # 將信息存儲在臨時變量中，等待用戶確認
                 with self._lock:
                     if not hasattr(self, '_pending_downloads'):
@@ -501,16 +843,21 @@ class Api(QObject):
             with self._lock:
                 self.task_download_paths[str(task_id)] = resolved_download_dir
             
-            debug_console(f"任務 {task_id} 下載路徑已記錄: {resolved_download_dir}")
+            download_console(f"任務 {task_id} 下載路徑已記錄: {resolved_download_dir}")
 
-            # 傳遞原始格式（如 mp3, mp4）給下載器
-            self.downloader.start_download(task_id, url, normalized_quality, normalized_format, 
-                                         downloads_dir=resolved_download_dir, 
-                                         add_resolution_to_filename=add_resolution,
-                                         original_format=fmt)
-            return "下載已開始"
+            # 丟給全域排程器（控制同時下載上限 + 重試）
+            self.scheduler.submit(
+                task_id,
+                url,
+                normalized_quality,
+                normalized_format,
+                downloads_dir=resolved_download_dir,
+                add_resolution_to_filename=add_resolution,
+                original_format=fmt,
+            )
+            return "已加入下載佇列"
         except Exception as e:
-            error_console(f"開始下載失敗: {e}")
+            download_console(f"開始下載失敗: {e}", level=LogLevel.ERROR)
             return f"下載失敗: {e}"
     
     @Slot(int, bool, result=str)
@@ -538,9 +885,9 @@ class Api(QObject):
                     try:
                         if os.path.exists(existing_file):
                             os.remove(existing_file)
-                            info_console(f"已刪除舊文件: {existing_file}")
+                            download_console(f"已刪除舊文件: {existing_file}", level=LogLevel.INFO)
                     except Exception as e:
-                        error_console(f"刪除舊文件失敗: {e}")
+                        download_console(f"刪除舊文件失敗: {e}", level=LogLevel.ERROR)
                         return f"刪除舊文件失敗: {e}"
                 else:
                     # 用戶取消，移除待處理任務
@@ -551,17 +898,22 @@ class Api(QObject):
                 self.task_download_paths[str(task_id)] = resolved_download_dir
                 
                 # 開始下載，傳遞原始格式
-                self.downloader.start_download(task_id, url, normalized_quality, normalized_format, 
-                                             downloads_dir=resolved_download_dir, 
-                                             add_resolution_to_filename=add_resolution,
-                                             original_format=original_format)
+                self.scheduler.submit(
+                    task_id,
+                    url,
+                    normalized_quality,
+                    normalized_format,
+                    downloads_dir=resolved_download_dir,
+                    add_resolution_to_filename=add_resolution,
+                    original_format=original_format,
+                )
                 
                 # 移除待處理任務
                 del self._pending_downloads[str(task_id)]
                 
-                return "下載已開始"
+                return "已加入下載佇列"
         except Exception as e:
-            error_console(f"確認重新下載失敗: {e}")
+            download_console(f"確認重新下載失敗: {e}", level=LogLevel.ERROR)
             return f"失敗: {e}"
 
     @Slot(int, result=str)
@@ -582,7 +934,7 @@ class Api(QObject):
             if not file_path:
                 return f"找不到任務 {task_key} 的檔案路徑"
             
-            debug_console(f"任務 {task_id} 的檔案路徑: {file_path}")
+            download_console(f"任務 {task_id} 的檔案路徑: {file_path}")
             
             # 檢查檔案是否存在
             if os.path.exists(file_path):
@@ -603,10 +955,10 @@ class Api(QObject):
                             subprocess.Popen(f'explorer /select,"{abs_path}"', 
                                            shell=True,
                                            creationflags=subprocess.CREATE_NO_WINDOW)
-                        debug_console(f"已執行 explorer 命令開啟: {file_path}")
+                        api_console(f"已執行 explorer 命令開啟: {file_path}")
                         return "已開啟檔案位置"
                     except Exception as e:
-                        error_console(f"開啟檔案位置失敗: {e}")
+                        api_console(f"開啟檔案位置失敗: {e}", level=LogLevel.ERROR)
                         # 嘗試開啟所在資料夾
                         try:
                             folder = os.path.dirname(file_path)
@@ -614,7 +966,7 @@ class Api(QObject):
                                            creationflags=subprocess.CREATE_NO_WINDOW)
                             return "已開啟資料夾"
                         except Exception as e2:
-                            error_console(f"開啟資料夾也失敗: {e2}")
+                            api_console(f"開啟資料夾也失敗: {e2}", level=LogLevel.ERROR)
                             return f"開啟失敗: {e2}"
                 else:
                     # 其他平台開啟所在資料夾
@@ -638,7 +990,7 @@ class Api(QObject):
                 return f"檔案不存在: {file_path}"
                 
         except Exception as e:
-            error_console(f"根據任務ID開啟檔案位置失敗: {e}")
+            api_console(f"根據任務ID開啟檔案位置失敗: {e}", level=LogLevel.ERROR)
             return f"失敗: {e}"
 
     @Slot(str, result=str)
@@ -663,13 +1015,13 @@ class Api(QObject):
                     custom_file_path = os.path.join(custom_path, fp)
                     if os.path.exists(custom_file_path):
                         fp = custom_file_path
-                        debug_console(f"在自訂路徑中找到檔案: {fp}")
+                        download_console(f"在自訂路徑中找到檔案: {fp}")
                     else:
                         # 如果自訂路徑中找不到，嘗試預設下載路徑
                         default_file_path = os.path.join(self.root_dir, 'downloads', fp)
                         if os.path.exists(default_file_path):
                             fp = default_file_path
-                            debug_console(f"在預設路徑中找到檔案: {fp}")
+                            download_console(f"在預設路徑中找到檔案: {fp}")
                         else:
                             # 最後嘗試相對於根目錄的路徑
                             fp = os.path.join(self.root_dir, fp)
@@ -678,7 +1030,7 @@ class Api(QObject):
                     default_file_path = os.path.join(self.root_dir, 'downloads', fp)
                     if os.path.exists(default_file_path):
                         fp = default_file_path
-                        debug_console(f"在預設路徑中找到檔案: {fp}")
+                        download_console(f"在預設路徑中找到檔案: {fp}")
                     else:
                         # 最後嘗試相對於根目錄的路徑
                         fp = os.path.join(self.root_dir, fp)
@@ -706,7 +1058,7 @@ class Api(QObject):
                     return "已開啟資料夾"
             return "檔案不存在"
         except Exception as e:
-            error_console(f"開啟檔案位置失敗: {e}")
+            api_console(f"開啟檔案位置失敗: {e}", level=LogLevel.ERROR)
             return f"失敗: {e}"
     
     @Slot(str, result=str)
@@ -745,10 +1097,10 @@ class Api(QObject):
             else:  # Linux 和其他 Unix-like 系統
                 subprocess.Popen(['xdg-open', url])
             
-            info_console(f"已開啟外部連結: {url}")
+            api_console(f"已開啟外部連結: {url}", level=LogLevel.INFO)
             return "已開啟外部連結"
         except Exception as e:
-            error_console(f"開啟外部連結失敗: {e}")
+            api_console(f"開啟外部連結失敗: {e}", level=LogLevel.ERROR)
             return f"失敗: {e}"
     
     @Slot(str, result=str)
@@ -758,29 +1110,29 @@ class Api(QObject):
             self.downloader.cancel_download(task_id)
             return "下載已取消"
         except Exception as e:
-            error_console(f"取消下載失敗: {e}")
+            download_console(f"取消下載失敗: {e}", level=LogLevel.ERROR)
             return f"取消失敗: {e}"
     
     @Slot(result=str)
     def open_settings(self):
         """開啟設定視窗"""
-        info_console("開啟設定視窗")
+        api_console("開啟設定視窗", level=LogLevel.INFO)
         try:
             # 檢查是否已經有設定視窗在運行
             if self.settings_process is not None and self.settings_process.poll() is None:
-                info_console("設定視窗已經開啟，嘗試調到該視窗")
+                api_console("設定視窗已經開啟，嘗試調到該視窗", level=LogLevel.INFO)
                 return "設定視窗已經開啟"
             
             settings_script = safe_path_join(self.root_dir, 'settings.pyw')
             if os.path.exists(settings_script):
                 self.settings_process = subprocess.Popen([sys.executable, settings_script])
-                info_console("設定視窗已開啟")
+                api_console("設定視窗已開啟", level=LogLevel.INFO)
                 return "設定視窗已開啟"
             else:
-                error_console("找不到設定腳本")
+                api_console("找不到設定腳本", level=LogLevel.ERROR)
                 return "找不到設定腳本"
         except Exception as e:
-            error_console(f"開啟設定視窗失敗: {e}")
+            api_console(f"開啟設定視窗失敗: {e}", level=LogLevel.ERROR)
             return f"開啟失敗: {e}"
     
     @Slot()
@@ -789,9 +1141,9 @@ class Api(QObject):
         try:
             if self.settings_process and self.settings_process.poll() is None:
                 self.settings_process.terminate()
-                info_console("設定視窗已關閉")
+                api_console("設定視窗已關閉", level=LogLevel.INFO)
         except Exception as e:
-            debug_console(f"關閉設定視窗失敗: {e}")
+            api_console(f"關閉設定視窗失敗: {e}")
     
     @Slot(result=dict)
     def load_settings(self):
@@ -813,7 +1165,7 @@ class Api(QObject):
         try:
             self.notificationRequested.emit(title or '', message or '')
         except Exception as e:
-            debug_console(f"發送通知失敗: {e}")
+            api_console(f"發送通知失敗: {e}")
 
     def _on_notification_requested(self, title, message):
         """在主執行緒處理通知"""
@@ -821,9 +1173,9 @@ class Api(QObject):
             if callable(self.notification_handler):
                 self.notification_handler(title or '', message or '')
             else:
-                debug_console(f"通知: {title} - {message}")
+                api_console(f"通知: {title} - {message}")
         except Exception as e:
-            debug_console(f"通知處理失敗: {e}")
+            api_console(f"通知處理失敗: {e}")
     
     @Slot(result=str)
     def check_ytdlp_version(self):
@@ -832,10 +1184,10 @@ class Api(QObject):
             import urllib.request, json, time, os
             
             current_version = yt_dlp.version.__version__
-            debug_console(f"目前 yt-dlp 版本: {current_version}")
+            api_console(f"目前 yt-dlp 版本: {current_version}")
             
             # 檢查快取檔案
-            cache_file = os.path.join(self.root_dir, 'main', 'ytdlp_version_cache.json')
+            cache_file = safe_path_join(self.root_dir, 'main', 'ytdlp_version_cache.json')
             latest = None
             
             # 檢查快取是否有效（24小時內）
@@ -851,9 +1203,9 @@ class Api(QObject):
                     if (time.time() - cache_time < 86400) and cache_version:
                         latest = cache_version
                         cache_valid = True
-                        debug_console(f"使用快取的版本資訊: {latest}")
+                        api_console(f"使用快取的版本資訊: {latest}")
                 except Exception as e:
-                    debug_console(f"讀取版本快取失敗: {e}")
+                    api_console(f"讀取版本快取失敗: {e}")
             
             # 如果快取無效，從網路獲取
             if not cache_valid:
@@ -871,30 +1223,30 @@ class Api(QObject):
                         }
                         with open(cache_file, 'w', encoding='utf-8') as f:
                             json.dump(cache_data, f, ensure_ascii=False, indent=2)
-                        debug_console(f"版本資訊已快取: {latest}")
+                        api_console(f"版本資訊已快取: {latest}")
                     except Exception as e:
-                        debug_console(f"儲存版本快取失敗: {e}")
+                        api_console(f"儲存版本快取失敗: {e}")
                         
                 except Exception as e:
-                    debug_console(f"網路版本檢查失敗: {e}")
+                    api_console(f"網路版本檢查失敗: {e}")
                     # 如果網路失敗但有舊快取，使用舊快取
                     if os.path.exists(cache_file):
                         try:
                             with open(cache_file, 'r', encoding='utf-8') as f:
                                 cache_data = json.load(f)
                             latest = cache_data.get('version', '')
-                            debug_console(f"使用舊快取版本: {latest}")
+                            api_console(f"使用舊快取版本: {latest}")
                         except Exception:
                             pass
             
             if latest:
-                debug_console(f"偵測到的最新 yt-dlp 版本: {latest}")
+                api_console(f"偵測到的最新 yt-dlp 版本: {latest}")
             else:
-                debug_console("無法取得最新 yt-dlp 版本")
+                api_console("無法取得最新 yt-dlp 版本")
             
             return current_version
         except Exception as e:
-            error_console(f"檢查版本失敗: {e}")
+            api_console(f"檢查版本失敗: {e}", level=LogLevel.ERROR)
             return "未知版本"
     
     @Slot(result=str)
@@ -932,20 +1284,20 @@ class Api(QObject):
             self._eval_js(version_script)
             return f"版本號已更新為: {APP_VERSION_HOME}"
         except Exception as e:
-            error_console(f"重新整理版本號失敗: {e}")
+            api_console(f"重新整理版本號失敗: {e}", level=LogLevel.ERROR)
             return f"更新失敗: {e}"
 
     @Slot(result=str)
     def restart_app(self):
         """重啟應用程式（舊版等價：優先重啟打包 exe，否則重啟腳本）"""
         try:
-            debug_console("應用程式重啟請求")
+            api_console("應用程式重啟請求")
             # 嘗試啟動同一資料夾上一層的 exe
             exe_path = os.path.normpath(os.path.join(self.root_dir, os.pardir, 'oldfish影片下載器.exe'))
             started = False
             try:
                 if os.path.exists(exe_path):
-                    debug_console(f"嘗試啟動 exe: {exe_path}")
+                    api_console(f"嘗試啟動 exe: {exe_path}")
                     try:
                         si = None
                         flags = 0
@@ -957,14 +1309,14 @@ class Api(QObject):
                         subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path))
                     started = True
             except Exception as e:
-                debug_console(f"啟動 exe 失敗: {e}")
+                api_console(f"啟動 exe 失敗: {e}")
 
             if not started:
                 # 退而求其次：重啟目前 Python 腳本（優先使用內嵌 pythonw，若無則 python.exe，最後使用目前解譯器）
-                pyw = os.path.normpath(os.path.join(self.root_dir, 'main.pyw'))
-                embed_dir = os.path.normpath(os.path.join(self.root_dir, 'python_embed'))
-                pythonw = os.path.normpath(os.path.join(embed_dir, 'pythonw.exe'))
-                python = os.path.normpath(os.path.join(embed_dir, 'python.exe'))
+                pyw = safe_path_join(self.root_dir, 'main.pyw')
+                embed_dir = safe_path_join(self.root_dir, 'lib', 'python_embed')
+                pythonw = safe_path_join(embed_dir, 'pythonw.exe')
+                python = safe_path_join(embed_dir, 'python.exe')
                 candidates = []
                 if os.path.isfile(pythonw):
                     candidates.append(pythonw)
@@ -985,9 +1337,9 @@ class Api(QObject):
                             except Exception:
                                 size_ok = True
                             if not size_ok:
-                                debug_console(f"跳過過小的可執行檔: {exe_path}")
+                                api_console(f"跳過過小的可執行檔: {exe_path}")
                                 continue
-                            debug_console(f"嘗試以解譯器啟動: {exe_path} {script_path}")
+                            api_console(f"嘗試以解譯器啟動: {exe_path} {script_path}")
                             try:
                                 si = None
                                 flags = 0
@@ -1000,9 +1352,9 @@ class Api(QObject):
                             started = True
                             break
                         except Exception as inner_e:
-                            debug_console(f"嘗試使用 {exe} 重啟失敗: {inner_e}")
+                            api_console(f"嘗試使用 {exe} 重啟失敗: {inner_e}")
                 except Exception as e:
-                    debug_console(f"啟動內嵌解譯器失敗: {e}")
+                    api_console(f"啟動內嵌解譯器失敗: {e}")
 
             # 關閉目前應用
             try:
@@ -1014,10 +1366,10 @@ class Api(QObject):
                     # 未能啟動新程序，只回報訊息
                     return "未找到可重啟目標，請手動重新啟動。"
             except Exception as e:
-                error_console(f"結束目前應用失敗: {e}")
+                api_console(f"結束目前應用失敗: {e}", level=LogLevel.ERROR)
                 return "重啟流程已嘗試，請確認是否已開啟新視窗。"
         except Exception as e:
-            error_console(f"重啟失敗: {e}")
+            api_console(f"重啟失敗: {e}", level=LogLevel.ERROR)
             return f"重啟失敗: {e}"
 
     @Slot()
@@ -1026,13 +1378,13 @@ class Api(QObject):
         try:
             self.restart_app()
         except Exception as e:
-            error_console(f"restartApp 失敗: {e}")
+            api_console(f"restartApp 失敗: {e}", level=LogLevel.ERROR)
     
     @Slot()
     def test_update_dialog(self):
         """測試更新對話框顯示（用於調試）"""
         try:
-            debug_console("測試更新對話框...")
+            api_console("測試更新對話框...")
             version_info = {
                 'update_available': True,
                 'current_version': '2023.12.30',
@@ -1041,7 +1393,7 @@ class Api(QObject):
             self.show_update_dialog(version_info)
             return "測試對話框已觸發"
         except Exception as e:
-            error_console(f"測試更新對話框失敗: {e}")
+            api_console(f"測試更新對話框失敗: {e}", level=LogLevel.ERROR)
             return f"測試失敗: {e}"
     
     def check_and_update_ytdlp(self):
@@ -1050,7 +1402,7 @@ class Api(QObject):
             import urllib.request, json, time, os
             
             # 檢查快取檔案
-            cache_file = os.path.join(self.root_dir, 'main', 'ytdlp_version_cache.json')
+            cache_file = safe_path_join(self.root_dir, 'main', 'ytdlp_version_cache.json')
             current_version = yt_dlp.version.__version__
             latest = None
             
@@ -1067,13 +1419,13 @@ class Api(QObject):
                     if (time.time() - cache_time < 86400) and cache_version:
                         latest = cache_version
                         cache_valid = True
-                        debug_console(f"使用快取的版本資訊: {latest}")
+                        api_console(f"使用快取的版本資訊: {latest}")
                 except Exception as e:
-                    debug_console(f"讀取版本快取失敗: {e}")
+                    api_console(f"讀取版本快取失敗: {e}")
             
             # 如果快取無效，從網路獲取
             if not cache_valid:
-                debug_console("檢查 yt-dlp 版本...")
+                api_console("檢查 yt-dlp 版本...")
                 try:
                     # 減少超時時間到5秒
                     with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=5) as resp:
@@ -1088,25 +1440,25 @@ class Api(QObject):
                         }
                         with open(cache_file, 'w', encoding='utf-8') as f:
                             json.dump(cache_data, f, ensure_ascii=False, indent=2)
-                        debug_console(f"版本資訊已快取: {latest}")
+                        api_console(f"版本資訊已快取: {latest}")
                     except Exception as e:
-                        debug_console(f"儲存版本快取失敗: {e}")
+                        api_console(f"儲存版本快取失敗: {e}")
                         
                 except Exception as e:
-                    debug_console(f"網路版本檢查失敗: {e}")
+                    api_console(f"網路版本檢查失敗: {e}")
                     # 如果網路失敗但有舊快取，使用舊快取
                     if os.path.exists(cache_file):
                         try:
                             with open(cache_file, 'r', encoding='utf-8') as f:
                                 cache_data = json.load(f)
                             latest = cache_data.get('version', '')
-                            debug_console(f"使用舊快取版本: {latest}")
+                            api_console(f"使用舊快取版本: {latest}")
                         except Exception:
                             pass
             
-            debug_console(f"目前版本: {current_version}")
+            api_console(f"目前版本: {current_version}")
             if latest:
-                debug_console(f"偵測到的最新版本: {latest}")
+                api_console(f"偵測到的最新版本: {latest}")
                 try:
                     needs_update = compare_versions(current_version, latest) < 0
                 except Exception:
@@ -1118,11 +1470,11 @@ class Api(QObject):
                         'latest_version': latest
                     }
                     # 使用信號在主線程中顯示對話框（因為 check_and_update_ytdlp 在後台線程執行）
-                    info_console(f"發現 yt-dlp 新版本（目前版本: {current_version}, 最新版本: {latest}），準備顯示更新對話框")
+                    api_console(f"發現 yt-dlp 新版本（目前版本: {current_version}, 最新版本: {latest}），準備顯示更新對話框", level=LogLevel.INFO)
                     self.updateDialogRequested.emit(version_info)
             return current_version
         except Exception as e:
-            debug_console(f"版本檢查失敗: {e}")
+            api_console(f"版本檢查失敗: {e}")
             return None
 
     @Slot(result='QVariant')
@@ -1132,7 +1484,7 @@ class Api(QObject):
             import urllib.request, json, time, os
             
             # 檢查快取檔案
-            cache_file = os.path.join(self.root_dir, 'main', 'ytdlp_version_cache.json')
+            cache_file = safe_path_join(self.root_dir, 'main', 'ytdlp_version_cache.json')
             current_version = yt_dlp.version.__version__
             latest_version = None
             
@@ -1150,7 +1502,7 @@ class Api(QObject):
                         latest_version = cache_version
                         cache_valid = True
                 except Exception as e:
-                    debug_console(f"讀取版本快取失敗: {e}")
+                    api_console(f"讀取版本快取失敗: {e}")
             
             # 如果快取無效，從網路獲取
             if not cache_valid:
@@ -1169,10 +1521,10 @@ class Api(QObject):
                         with open(cache_file, 'w', encoding='utf-8') as f:
                             json.dump(cache_data, f, ensure_ascii=False, indent=2)
                     except Exception as e:
-                        debug_console(f"儲存版本快取失敗: {e}")
+                        api_console(f"儲存版本快取失敗: {e}")
                         
                 except Exception as e:
-                    debug_console(f"網路版本檢查失敗: {e}")
+                    api_console(f"網路版本檢查失敗: {e}")
                     # 如果網路失敗但有舊快取，使用舊快取
                     if os.path.exists(cache_file):
                         try:
@@ -1196,7 +1548,7 @@ class Api(QObject):
                 }
             return None
         except Exception as e:
-            debug_console(f"檢查版本細節失敗: {e}")
+            api_console(f"檢查版本細節失敗: {e}")
             return None
 
     @Slot()
@@ -1206,11 +1558,11 @@ class Api(QObject):
             try:
                 self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(0, '開始更新…');")
                 # 選擇 python 執行檔：優先內嵌，否則使用目前執行環境
-                python_exe = safe_path_join(self.root_dir, 'python_embed', 'python.exe')
+                python_exe = safe_path_join(self.root_dir, 'lib', 'python_embed', 'python.exe')
                 if not os.path.exists(python_exe):
                     python_exe = sys.executable
                 cmd = [python_exe, '-m', 'pip', 'install', '--upgrade', 'yt-dlp', '--disable-pip-version-check']
-                debug_console(f"執行更新命令: {' '.join(cmd)}")
+                api_console(f"執行更新命令: {' '.join(cmd)}")
                 # 在 Windows 隱藏 console 啟動 pip 更新
                 si = None
                 flags = 0
@@ -1241,7 +1593,7 @@ class Api(QObject):
                         if not ln:
                             continue
                         output_lines.append(ln)
-                        debug_console(f"pip 輸出: {ln}")
+                        api_console(f"pip 輸出: {ln}")
                         lower = ln.lower()
                         if 'collecting' in lower or 'downloading' in lower:
                             self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(undefined, '正在下載套件…');")
@@ -1260,8 +1612,8 @@ class Api(QObject):
                     # 等待進程完成
                     ret = proc.wait()
                     output_text = '\n'.join(output_lines)
-                    debug_console(f"pip 更新完成，返回碼: {ret}")
-                    debug_console(f"pip 輸出內容: {output_text[:500]}")  # 只記錄前500字符
+                    api_console(f"pip 更新完成，返回碼: {ret}")
+                    api_console(f"pip 輸出內容: {output_text[:500]}")  # 只記錄前500字符
                     
                     if ret == 0:
                         # 驗證更新是否成功：檢查當前版本
@@ -1270,7 +1622,7 @@ class Api(QObject):
                             import importlib
                             
                             # 檢查 yt-dlp 的實際安裝路徑
-                            python_embed_path = safe_path_join(self.root_dir, 'python_embed')
+                            python_embed_path = safe_path_join(self.root_dir, 'lib', 'python_embed')
                             if python_embed_path not in sys.path:
                                 sys.path.insert(0, python_embed_path)
                             
@@ -1289,7 +1641,7 @@ class Api(QObject):
                             debug_console(f"yt-dlp 模組路徑: {yt_dlp_path}")
                             
                             new_version = yt_dlp.version.__version__
-                            info_console(f"更新後 yt-dlp 版本: {new_version}")
+                            api_console(f"更新後 yt-dlp 版本: {new_version}", level=LogLevel.INFO)
                             
                             # 檢查是否真的安裝了新版本
                             was_updated = 'successfully installed' in output_text.lower()
@@ -1308,14 +1660,14 @@ class Api(QObject):
                                 self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
                                 self._eval_js(f"window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 已更新！\\n\\n目前版本: {new_version}');")
                         except Exception as verify_err:
-                            error_console(f"驗證更新版本失敗: {verify_err}")
+                            api_console(f"驗證更新版本失敗: {verify_err}", level=LogLevel.ERROR)
                             import traceback
-                            error_console(traceback.format_exc())
+                            api_console(traceback.format_exc(), level=LogLevel.ERROR)
                             self._eval_js("window.__ofUpdateProgress && window.__ofUpdateProgress(100, '更新完成');")
                             self._eval_js("window.__ofUpdateDone && window.__ofUpdateDone(true, 'yt-dlp 更新完成，請重新啟動應用程式以確保新版本生效。');")
                     else:
-                        error_console(f"pip 更新失敗，返回碼: {ret}")
-                        error_console(f"pip 錯誤輸出: {output_text[-500:]}")  # 只記錄最後500字符
+                        api_console(f"pip 更新失敗，返回碼: {ret}", level=LogLevel.ERROR)
+                        api_console(f"pip 錯誤輸出: {output_text[-500:]}", level=LogLevel.ERROR)  # 只記錄最後500字符
                         self._eval_js("window.__ofUpdateDone && window.__ofUpdateDone(false, 'yt-dlp 更新失敗，請稍後再試或手動更新。');")
                 finally:
                     # 確保進程資源被釋放
@@ -1325,7 +1677,7 @@ class Api(QObject):
                         proc.terminate()
                         proc.wait()
             except Exception as e:
-                error_console(f"更新執行失敗: {e}")
+                api_console(f"更新執行失敗: {e}", level=LogLevel.ERROR)
                 safe_msg = str(e).replace('\\', '/')
                 self._eval_js(f"window.__ofUpdateDone && window.__ofUpdateDone(false, '更新過程發生錯誤：{safe_msg}');")
         threading.Thread(target=run_update, daemon=True).start()
@@ -1478,8 +1830,8 @@ class Api(QObject):
             try:
                 self.page.runJavaScript(dialog_html)
             except Exception as js_err:
-                debug_console(f"直接執行 JavaScript 失敗，使用信號: {js_err}")
+                api_console(f"直接執行 JavaScript 失敗，使用信號: {js_err}")
                 self._eval_js(dialog_html)
             return "update"
         except Exception as e:
-            debug_console(f"注入更新對話框失敗: {e}")
+            api_console(f"注入更新對話框失敗: {e}")

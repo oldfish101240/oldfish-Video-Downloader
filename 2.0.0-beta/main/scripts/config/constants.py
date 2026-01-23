@@ -6,8 +6,13 @@
 
 # 應用程式資訊
 APP_NAME = "oldfish影片下載器"
-APP_VERSION = "2.0.0-Release"
-APP_VERSION_HOME = "2.0.0-Release - 2025.11.09"
+APP_VERSION = "2.1.0-Release"
+APP_VERSION_HOME = "2.1.0-Release - 2026.01.20"
+
+# Console 日誌預設等級
+# 可選："DEBUG" / "INFO" / "WARNING" / "ERROR"
+# 注意：constants.py 盡量保持「不 import 專案內模組」，避免被單獨執行或被工具掃描時因路徑問題噴錯
+DEFAULT_LOG_LEVEL = "DEBUG"
 
 # 音訊品質選項
 AUDIO_QUALITIES = [
@@ -22,7 +27,8 @@ AUDIO_QUALITIES = [
 DEFAULT_SETTINGS = {
     'enableNotifications': True,
     'addResolutionToFilename': False,
-    'customDownloadPath': ''
+    'customDownloadPath': '',
+    'maxConcurrentDownloads': 3
 }
 
 # 視窗設定

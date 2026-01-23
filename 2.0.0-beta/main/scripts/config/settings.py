@@ -4,10 +4,21 @@
 設定管理模組
 """
 
+print("settings.py is starting...")
+
 import os
+import sys
 import json
-from config.constants import DEFAULT_SETTINGS
-from utils.logger import debug_console, error_console, warning_console
+
+# 添加父目錄到路徑，以便導入其他模組
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)  # main/scripts
+root_dir = os.path.dirname(parent_dir)  # main
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from scripts.config.constants import DEFAULT_SETTINGS
+from scripts.utils.logger import debug_console, error_console, warning_console
 
 class SettingsManager:
     """設定管理器"""

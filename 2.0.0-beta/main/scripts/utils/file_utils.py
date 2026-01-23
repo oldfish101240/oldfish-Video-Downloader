@@ -69,3 +69,35 @@ def get_download_path(root_dir, settings_manager):
 def get_assets_path(root_dir):
     """獲取資源檔案路徑"""
     return safe_path_join(root_dir, 'assets')
+
+def get_deno_path(root_dir):
+    """獲取 Deno 可執行文件路徑（用於 yt-dlp 的 JavaScript 執行時）"""
+    try:
+        import sys
+        # Deno 位於 lib/deno 目錄中
+        deno_dir = safe_path_join(root_dir, 'lib', 'deno')
+        
+        # 根據平台選擇可執行文件名
+        if sys.platform.startswith('win'):
+            deno_exe = 'deno.exe'
+        else:
+            deno_exe = 'deno'
+        
+        deno_path = safe_path_join(deno_dir, deno_exe)
+        
+        # 檢查文件是否存在
+        if os.path.exists(deno_path):
+            return deno_path
+        
+        # 如果標準位置不存在，嘗試其他可能的位置
+        # 例如直接在 deno_dir 中查找
+        for possible_name in [deno_exe, 'deno']:
+            possible_path = safe_path_join(deno_dir, possible_name)
+            if os.path.exists(possible_path):
+                return possible_path
+        
+        # 如果都找不到，返回 None（表示 Deno 不可用）
+        return None
+    except Exception as e:
+        error_console(f"獲取 Deno 路徑失敗: {e}")
+        return None
