@@ -856,6 +856,30 @@ class Api(QObject):
             download_console(f"檢查文件是否存在時出錯: {e}", level=LogLevel.ERROR)
             return "FILE_NOT_EXISTS"  # 出錯時假設文件不存在，允許下載
     
+    @Slot(str, result=str)
+    def delete_existing_file(self, file_path):
+        """刪除已存在的檔案（僅允許刪除下載目錄內的檔案）。成功回傳 OK，失敗回傳錯誤訊息。"""
+        try:
+            if not file_path or not file_path.strip():
+                return "錯誤：未提供檔案路徑"
+            file_path = os.path.normpath(os.path.abspath(file_path.strip()))
+            settings = self.settings_manager.load_settings()
+            resolved_download_dir = get_download_path(self.root_dir, self.settings_manager)
+            download_dir_real = os.path.realpath(resolved_download_dir)
+            file_real = os.path.realpath(file_path)
+            if not file_real.startswith(download_dir_real):
+                download_console(f"拒絕刪除：檔案不在下載目錄內: {file_path}", level=LogLevel.WARNING)
+                return "錯誤：僅允許刪除下載目錄內的檔案"
+            if not os.path.isfile(file_real):
+                download_console(f"檔案不存在或非檔案，跳過刪除: {file_real}", level=LogLevel.INFO)
+                return "OK"
+            os.remove(file_real)
+            download_console(f"已刪除舊檔案: {file_real}", level=LogLevel.INFO)
+            return "OK"
+        except Exception as e:
+            download_console(f"刪除檔案失敗: {e}", level=LogLevel.ERROR)
+            return f"失敗: {e}"
+    
     def _check_file_exists(self, url, quality, format_type, downloads_dir, add_resolution, original_format=None):
         """檢查目標文件是否存在，返回文件路徑（如果存在）
         

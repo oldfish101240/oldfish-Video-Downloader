@@ -2932,84 +2932,62 @@
                             '目標資料夾中已存在同名文件：<br><strong>' + fileName + '</strong><br><br>是否要刪除舊文件並重新下載？',
                             () => {
                                 console.log("[confirmDownload] 用戶確認重新下載");
-                                // 用戶確認刪除並重新下載
-                                // 將任務加入佇列並渲染
-                                const taskId = nextTaskId++;
-                                console.log("[confirmDownload] 創建任務 ID:", taskId);
-                                
-                                if (typeof addDownloadTask !== 'function') {
-                                    console.error("[confirmDownload] addDownloadTask 未定義");
-                                    alert('錯誤：addDownloadTask 函數未定義');
+                                const backend2 = __getBackendApi();
+                                if (!backend2 || typeof backend2.delete_existing_file !== 'function') {
+                                    if (typeof showModal === 'function') showModal('錯誤', '後端不支援刪除檔案');
+                                    if (typeof closeConfirmModal === 'function') closeConfirmModal();
                                     return;
                                 }
-                                
-                                addDownloadTask({
-                                    id: taskId,
-                                    url: url,
-                                    title: lastVideoInfo.title || '未知影片',
-                                    thumbnail: lastVideoInfo.thumb || '',
-                                    uploader: lastVideoInfo.uploader || '未知作者',
-                                    duration: lastVideoInfo.duration || '00:00',
-                                    quality: quality,
-                                    format: format,
-                                    progress: 0,
-                                    status: '等待中',
-                                    filePath: '',
-                                    eta: ''
-                                });
-                                
-                                // 清理輸入狀態
-                                try { const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; } catch(e) { console.error("[confirmDownload] 清理輸入狀態時出錯:", e); }
-                                currentUrl = '';
-                                
-                                // 開始下載（用戶已確認重新下載，直接調用 confirm_redownload 刪除文件並下載）
-                                setTimeout(() => {
-                                    const backend2 = __getBackendApi();
-                                    if (backend2 && backend2.start_download) {
-                                        // 先調用 start_download 來創建 _pending_downloads 條目
-                                        backend2.start_download(taskId, url, quality, format)
-                                            .then(result => {
-                                                console.log("[confirmDownload] 下載任務啟動結果:", result);
-                                                // 如果返回 FILE_EXISTS，表示文件仍然存在，需要刪除並重新下載
-                                                if (result && result.startsWith('FILE_EXISTS:')) {
-                                                    console.log("[confirmDownload] 文件仍然存在，調用 confirm_redownload 刪除並重新下載");
-                                                    if (backend2 && backend2.confirm_redownload) {
-                                                        // 使用 setTimeout 確保不阻塞 UI
-                                                        setTimeout(() => {
-                                                            backend2.confirm_redownload(taskId, true)
-                                                                .then(redownloadResult => {
-                                                                    console.log("[confirmDownload] confirm_redownload 結果:", redownloadResult);
-                                                                })
-                                                                .catch(error => {
-                                                                    console.error("[confirmDownload] confirm_redownload 出錯:", error);
-                                                                    if (typeof showModal === 'function') {
-                                                                        showModal('錯誤', '刪除舊文件並重新下載時發生錯誤：' + error);
-                                                                    }
-                                                                });
-                                                        }, 10);
-                                                    } else {
-                                                        console.error("[confirmDownload] confirm_redownload 方法不存在");
-                                                        if (typeof showModal === 'function') {
-                                                            showModal('錯誤', '後端 API 不支持重新下載功能');
-                                                        }
-                                                    }
-                                                }
-                                            })
-                                            .catch(error => {
-                                                console.error("[confirmDownload] 啟動下載任務時出錯:", error);
-                                                if (typeof showModal === 'function') {
-                                                    showModal('錯誤', '啟動下載任務時發生錯誤');
-                                                }
-                                            });
-                                    }
-                                }, 0);
-                                
-                                if (typeof closeConfirmModal === 'function') {
-                                    closeConfirmModal();
-                                }
+                                // 1) 先刪除舊影片
+                                backend2.delete_existing_file(existingFile)
+                                    .then(deleteResult => {
+                                        if (deleteResult !== 'OK') {
+                                            if (typeof showModal === 'function') showModal('錯誤', deleteResult || '刪除舊檔案失敗');
+                                            if (typeof closeConfirmModal === 'function') closeConfirmModal();
+                                            return;
+                                        }
+                                        // 2) 將任務加入佇列（addDownloadTask 內會 showPage('queue')，即跳轉至佇列）
+                                        const taskId = nextTaskId++;
+                                        if (typeof addDownloadTask !== 'function') {
+                                            if (typeof showModal === 'function') showModal('錯誤', 'addDownloadTask 未定義');
+                                            if (typeof closeConfirmModal === 'function') closeConfirmModal();
+                                            return;
+                                        }
+                                        addDownloadTask({
+                                            id: taskId,
+                                            url: url,
+                                            title: lastVideoInfo.title || '未知影片',
+                                            thumbnail: lastVideoInfo.thumb || '',
+                                            uploader: lastVideoInfo.uploader || '未知作者',
+                                            duration: lastVideoInfo.duration || '00:00',
+                                            quality: quality,
+                                            format: format,
+                                            progress: 0,
+                                            status: '等待中',
+                                            filePath: '',
+                                            eta: ''
+                                        });
+                                        try { const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; } catch(e) {}
+                                        currentUrl = '';
+                                        if (typeof closeConfirmModal === 'function') closeConfirmModal();
+                                        // 3) 開始下載（檔案已刪除，直接 start_download 即可）
+                                        if (backend2.start_download) {
+                                            backend2.start_download(taskId, url, quality, format)
+                                                .then(result => console.log("[confirmDownload] 下載任務啟動結果:", result))
+                                                .catch(error => {
+                                                    console.error("[confirmDownload] 啟動下載任務時出錯:", error);
+                                                    if (typeof showModal === 'function') showModal('錯誤', '啟動下載任務時發生錯誤');
+                                                });
+                                        }
+                                    })
+                                    .catch(error => {
+                                        console.error("[confirmDownload] 刪除舊檔案時出錯:", error);
+                                        if (typeof showModal === 'function') showModal('錯誤', '刪除舊檔案時發生錯誤：' + error);
+                                        if (typeof closeConfirmModal === 'function') closeConfirmModal();
+                                    });
                             }
                         );
-                        // 如果用戶取消，不做任何事（不加入佇列，不跳轉）
+                        // 用戶按下「否」：不加入佇列、不跳轉、不開始下載（關閉對話框即可，無需其他動作）
                         return;
                     }
                 } catch (error) {
