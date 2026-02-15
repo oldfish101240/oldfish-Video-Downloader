@@ -1,5 +1,3 @@
 Launcher started.
 Attempting to execute: ".\python_embed\pythonw.exe" ".\main\oldfish_downloader_rebuild.pyw"
-Process created with PID: 5780
-Child process (PID: 5780) finished.
-Launcher finished.
+Error creating process: 2

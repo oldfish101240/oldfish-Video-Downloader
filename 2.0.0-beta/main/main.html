@@ -3357,6 +3357,11 @@
          * @param {number} taskId - 任務ID。
          */
         function openFileLocation(taskId) {
+            /* 除錯：點擊時立即 log，若終端沒有 [DBG] open_file_location_by_task 請開 DevTools 看此訊息是否出現 */
+            console.log("[DBG-Frontend] 開啟資料夾按鈕被點擊 taskId=" + taskId);
+            if (window.api && window.api.log_from_js) {
+                try { window.api.log_from_js("info", "[DBG-Frontend] 開啟資料夾按鈕被點擊 taskId=" + taskId); } catch (e) {}
+            }
             const task = downloadQueue.find(t => t.id === taskId);
             if (!task) {
                 showModal("錯誤", "找不到指定的下載任務。");
