@@ -1063,7 +1063,7 @@
         .queue-item {
             background: #2b2e37; /* 項目背景色 */
             border-radius: 12px;
-            padding: 15px 20px;
+            padding: 10px 15px; /* 縮小內邊距 */
             /* margin-bottom: 20px; */ /* 項目間距由分隔線控制 */
             width: 100%;
             display: flex;
@@ -1079,12 +1079,22 @@
             box-shadow: 0 6px 16px rgba(0,0,0,0.4);
         }
 
+        .queue-item.completed {
+            border: 2px solid #2ecc71;
+            background: #1e2a24;
+        }
+
+        .queue-item.completed:hover {
+            border-color: #27ae60;
+            box-shadow: 0 6px 16px rgba(46, 204, 113, 0.3);
+        }
+
         .queue-item-thumbnail {
-            width: 120px; /* 縮圖寬度 */
-            height: 90px; /* 縮圖高度 */
+            width: 100px; /* 縮圖寬度 - 縮小 */
+            height: 70px; /* 縮圖高度 - 縮小 */
             object-fit: cover; /* 裁剪圖片以填充 */
             border-radius: 8px;
-            margin-right: 15px;
+            margin-right: 12px; /* 縮小右邊距 */
             flex-shrink: 0; /* 防止縮圖被壓縮 */
             background-color: #181a20; /* 縮圖載入前的背景 */
             display: flex; /* 讓內容居中 */
@@ -1112,19 +1122,19 @@
         }
 
         .queue-item-title {
-            font-size: 18px;
+            font-size: 16px; /* 縮小字體 */
             font-weight: bold;
             color: #e5e7eb;
-            margin-bottom: 5px;
+            margin-bottom: 3px; /* 縮小下邊距 */
             word-break: break-all; /* 長標題自動換行 */
             text-align: left;
         }
 
         .queue-item-meta,
         .queue-item-url {
-            font-size: 14px;
+            font-size: 13px; /* 縮小字體 */
             color: #b0b0b0;
-            margin-bottom: 3px;
+            margin-bottom: 2px; /* 縮小下邊距 */
             word-break: break-all;
             text-align: left;
         }
@@ -1142,7 +1152,7 @@
             background-color: #444;
             border-radius: 5px;
             height: 8px;
-            margin-top: 10px;
+            margin-top: 6px; /* 縮小上邊距 */
             overflow: hidden;
             position: relative;
         }
@@ -1158,10 +1168,27 @@
         
 
         .progress-text {
-            font-size: 13px;
+            font-size: 12px; /* 縮小字體 */
             color: #888;
-            margin-top: 5px;
+            margin-top: 3px; /* 縮小上邊距 */
             text-align: right;
+        }
+
+        .completed-badge {
+            margin-top: 6px;
+            color: #2ecc71;
+            font-size: 13px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .completed-badge::before {
+            content: '✓';
+            color: #2ecc71;
+            font-size: 14px;
+            font-weight: bold;
         }
 
         .queue-separator {
@@ -1184,13 +1211,21 @@
             border-radius: 8px;
             transition: background 0.2s ease;
         }
-        .queue-item-action-btn:hover {
+        .queue-item-action-btn:hover:not(:disabled) {
             background: rgba(255,255,255,0.1);
+        }
+        .queue-item-action-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .queue-item-action-btn:disabled img {
+            filter: brightness(0.5);
         }
         .queue-item-action-btn img {
             width: 24px;
             height: 24px;
             filter: brightness(0.85);
+            transition: filter 0.2s ease;
         }
         
         /* 設定頁面樣式 */
@@ -1788,6 +1823,104 @@
         </div>
     </div>
     <script>
+        // 重定向 console 輸出到 Python 端
+        (function() {
+            // 保存原始的 console 方法
+            const originalConsole = {
+                log: console.log.bind(console),
+                error: console.error.bind(console),
+                warn: console.warn.bind(console),
+                info: console.info.bind(console),
+                debug: console.debug.bind(console)
+            };
+            
+            // 創建發送日誌到 Python 的函數
+            function sendLogToPython(level, args) {
+                try {
+                    // 將參數轉換為字符串
+                    const message = Array.from(args).map(arg => {
+                        if (typeof arg === 'object') {
+                            try {
+                                return JSON.stringify(arg);
+                            } catch (e) {
+                                return String(arg);
+                            }
+                        }
+                        return String(arg);
+                    }).join(' ');
+                    
+                    // 嘗試發送到 Python 端
+                    if (window.api && typeof window.api.log_from_js === 'function') {
+                        window.api.log_from_js(level, message).catch(err => {
+                            // 如果發送失敗，至少保留原生輸出
+                            originalConsole.error('[日誌發送失敗]', err);
+                        });
+                    }
+                } catch (e) {
+                    // 如果出錯，至少保留原生輸出
+                    originalConsole.error('[日誌重定向錯誤]', e);
+                }
+            }
+            
+            // 重寫 console 方法
+            console.log = function(...args) {
+                originalConsole.log(...args);
+                sendLogToPython('log', args);
+            };
+            
+            console.error = function(...args) {
+                originalConsole.error(...args);
+                sendLogToPython('error', args);
+            };
+            
+            console.warn = function(...args) {
+                originalConsole.warn(...args);
+                sendLogToPython('warn', args);
+            };
+            
+            console.info = function(...args) {
+                originalConsole.info(...args);
+                sendLogToPython('info', args);
+            };
+            
+            console.debug = function(...args) {
+                originalConsole.debug(...args);
+                sendLogToPython('debug', args);
+            };
+            
+            originalConsole.log('[前端] Console 輸出已重定向到 Python 端');
+        })();
+        
+        // 添加全局錯誤處理和調試信息
+        window.addEventListener('error', function(e) {
+            console.error('[全局錯誤]', e.message, 'at', e.filename, ':', e.lineno, ':', e.colno);
+            console.error('[錯誤堆棧]', e.error ? e.error.stack : '無堆棧信息');
+        });
+        
+        // 檢查關鍵函數是否已定義
+        function checkCriticalFunctions() {
+            const functions = ['showPage', 'addDownloadTask', 'renderQueue', 'showModal', 'showConfirmModal', 'closeConfirmModal'];
+            const missing = [];
+            functions.forEach(func => {
+                if (typeof window[func] !== 'function') {
+                    missing.push(func);
+                    console.error('[函數檢查] 函數未定義:', func);
+                } else {
+                    console.log('[函數檢查] 函數已定義:', func);
+                }
+            });
+            if (missing.length > 0) {
+                console.error('[函數檢查] 缺少以下函數:', missing.join(', '));
+            }
+        }
+        
+        // 在 DOM 加載完成後檢查
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkCriticalFunctions);
+        } else {
+            checkCriticalFunctions();
+        }
+        
         // 儲存上次獲取的影片資訊以還原畫質選項
         let lastVideoInfo = null;
         // 儲存目前正在處理的影片網址（從主頁或佇列進入）
@@ -2015,23 +2148,38 @@
         function closeConfirmModal() {
             const modal = document.getElementById('confirm-modal-bg');
             modal.classList.remove('show');
+            
+            // 如果取消的是文件已存在的確認，需要通知後端取消下載並從佇列中移除任務
+            // 立即執行，不等待動畫完成
+            if (window._pendingTaskId) {
+                const taskId = window._pendingTaskId;
+                delete window._pendingTaskId;
+                
+                // 從前端佇列中移除任務
+                const taskIndex = downloadQueue.findIndex(task => task.id === taskId);
+                if (taskIndex !== -1) {
+                    downloadQueue.splice(taskIndex, 1);
+                    renderQueue(); // 重新渲染佇列
+                    console.log(`已從佇列中移除任務 ${taskId}`);
+                } else {
+                    console.warn(`找不到任務 ${taskId}，可能已經被移除`);
+                }
+                
+                // 通知後端取消下載
+                const backend = __getBackendApi();
+                if (backend && backend.confirm_redownload) {
+                    backend.confirm_redownload(taskId, false)
+                        .then(result => {
+                            console.log("取消下載結果:", result);
+                        })
+                        .catch(error => {
+                            console.error("取消下載時出錯:", error);
+                        });
+                }
+            }
+            
             setTimeout(() => {
                 modal.style.display = 'none';
-                // 如果取消的是文件已存在的確認，需要通知後端取消下載
-                if (window._pendingTaskId) {
-                    const taskId = window._pendingTaskId;
-                    delete window._pendingTaskId;
-                    // 通知後端取消下載
-                    if (window.pywebview && window.pywebview.api) {
-                        window.pywebview.api.confirm_redownload(taskId, false)
-                            .then(result => {
-                                console.log("取消下載結果:", result);
-                            })
-                            .catch(error => {
-                                console.error("取消下載時出錯:", error);
-                            });
-                    }
-                }
                 window._confirmCallback = null;
             }, 200);
         }
@@ -2637,202 +2785,353 @@
             
             headerText.textContent = text;
             
-            if (selectId === 'quality-select') {{
+            if (selectId === 'quality-select') {
                 currentQuality = value;
                 closeSelect('quality-select');
-            }} else if (selectId === 'format-select') {{
+            } else if (selectId === 'format-select') {
                 currentFormat = value;
                 closeSelect('format-select');
                 onFormatChange();
-            }}
+            }
         }
 
         /**
          * 處理影片格式選擇的變更。
          * 根據選擇的影片或音訊格式調整畫質選項。
          */
-        function onFormatChange() {{
+        function onFormatChange() {
             const qualityOptions = document.getElementById('quality-options');
             const qualityLabel = document.getElementById('video-modal-quality-label');
             const audioTypes = ["mp3", "aac", "flac", "wav"];
 
-            if (audioTypes.includes(currentFormat)) {{
+            if (audioTypes.includes(currentFormat)) {
                 // 如果是音訊格式，顯示音訊品質
                 qualityOptions.innerHTML = '';
-                AUDIO_QUALITIES.forEach(q => {{
+                AUDIO_QUALITIES.forEach(q => {
                     const optionDiv = document.createElement('div');
                     optionDiv.className = 'custom-select-option';
                     optionDiv.textContent = q.label;
                     optionDiv.onclick = () => selectOption('quality-select', q.value, q.label);
                     // 設定預設選中192kbps
-                    if (q.value === "192") {{
+                    if (q.value === "192") {
                         optionDiv.classList.add('selected');
-                    }}
+                    }
                     qualityOptions.appendChild(optionDiv);
-                }});
+                });
                 currentQuality = "192"; // 預設音訊品質
                 const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
-                if (qualitySelectText) {{
+                if (qualitySelectText) {
                     qualitySelectText.textContent = "192kbps";
-                }}
+                }
                 qualityLabel.innerText = "位元率";
-            }} else {{
+            } else {
                 // 如果是影片格式，從 lastVideoInfo 還原影片畫質
-                if (lastVideoInfo && lastVideoInfo.qualities) {{
+                if (lastVideoInfo && lastVideoInfo.qualities) {
                     qualityOptions.innerHTML = '';
                     let sortedQualities = sortQualities(lastVideoInfo.qualities);
                     // 過濾掉低於360p的畫質選項
-                    sortedQualities = sortedQualities.filter(q => {{
-                        function getValue(q) {{
+                    sortedQualities = sortedQualities.filter(q => {
+                        function getValue(q) {
                             if (q.label.endsWith('K')) return parseInt(q.label) * 1000;
                             var m = q.label.match(/(\d+)p/);
                             return m ? parseInt(m[1]) : 0;
-                        }}
+                        }
                         return getValue(q) >= 360;
-                    }});
+                    });
                     let defaultSet = false;
-                    sortedQualities.forEach(q => {{
+                    sortedQualities.forEach(q => {
                         const optionDiv = document.createElement('div');
                         optionDiv.className = 'custom-select-option';
                         optionDiv.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
                         optionDiv.onclick = () => selectOption('quality-select', q.label, q.label + (q.ratio ? ' ' + q.ratio : ''));
                         // 設定預設選中1080p，如果沒有1080p則選第一個
-                        if (q.label === "1080p" || (!defaultSet && sortedQualities.indexOf(q) === 0)) {{
+                        if (q.label === "1080p" || (!defaultSet && sortedQualities.indexOf(q) === 0)) {
                             optionDiv.classList.add('selected');
                             currentQuality = q.label;
                             const qualitySelectText = document.querySelector('#quality-select .custom-select-text');
-                            if (qualitySelectText) {{
+                            if (qualitySelectText) {
                                 qualitySelectText.textContent = q.label + (q.ratio ? ' ' + q.ratio : '');
-                            }}
+                            }
                             defaultSet = true;
-                        }}
+                        }
                         qualityOptions.appendChild(optionDiv);
-                    }});
-                }}
+                    });
+                }
                 qualityLabel.innerText = "影片畫質";
-            }}
-        }}
+            }
+        }
 
         /**
          * 確認並開始影片下載。
          * 使用選定的選項呼叫 Python API。
          */
-        function __getBackendApi() {{
+        function __getBackendApi() {
             // Qt WebChannel: window.api
             // 其他容器相容：window.pywebview.api
-            try {{
+            try {
                 if (window.api) return window.api;
                 if (window.pywebview && window.pywebview.api) return window.pywebview.api;
-            }} catch(e) {{}}
+            } catch(e) {}
             return null;
-        }}
+        }
 
-        async function confirmDownload() {{
-            // 優先使用 showVideoModal 記錄的 currentUrl；若空才讀主頁輸入框
-            let url = (currentUrl || '').trim();
-            if (!url) {{
-            const urlInput = document.getElementById('video-url');
-                url = (urlInput && urlInput.value ? urlInput.value.trim() : '');
-            }}
-            const quality = currentQuality;
-            const format = currentFormat;
+        async function confirmDownload() {
+            try {
+                console.log('[confirmDownload] 開始執行');
+                
+                // 優先使用 showVideoModal 記錄的 currentUrl；若空才讀主頁輸入框
+                let url = (currentUrl || '').trim();
+                if (!url) {
+                    const urlInput = document.getElementById('video-url');
+                    url = (urlInput && urlInput.value ? urlInput.value.trim() : '');
+                }
+                const quality = currentQuality;
+                const format = currentFormat;
+                
+                console.log('[confirmDownload] URL:', url, 'Quality:', quality, 'Format:', format);
 
-            closeVideoModal(); // 關閉影片選擇模態視窗
+                if (typeof closeVideoModal === 'function') {
+                    closeVideoModal(); // 關閉影片選擇模態視窗
+                } else {
+                    console.warn('[confirmDownload] closeVideoModal 未定義');
+                }
 
-            // 將任務加入佇列並渲染
-            addDownloadTask({
-                id: nextTaskId++, // 給予唯一ID
-                url: url,
-                title: lastVideoInfo.title || '未知影片',
-                thumbnail: lastVideoInfo.thumb || '', // 縮圖找不到時傳空字串
-                uploader: lastVideoInfo.uploader || '未知作者',
-                duration: lastVideoInfo.duration || '00:00',
-                quality: quality,
-                format: format,
-                progress: 0, // 初始進度
-                status: '等待中', // 初始狀態
-                filePath: '', // 新增檔案路徑，下載完成後會更新
-                eta: '' // 預估剩餘時間
-            });
-
-            // 清理輸入狀態
-            try {{ const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; }} catch(e) {{}}
-            currentUrl = '';
-
-            // 呼叫 Python API 開始下載 (排到下一個事件迴圈，讓 UI 先切頁)
-            setTimeout(() => {{
-                try {{
-                    const task = downloadQueue[downloadQueue.length - 1];
-                    const backend = __getBackendApi();
-                    if (!backend || !backend.start_download) {{
-                        console.error("找不到後端 API（start_download）");
+                // 先檢查文件是否存在，再決定是否加入佇列
+                const backend = __getBackendApi();
+                if (!backend) {
+                    console.error("[confirmDownload] 找不到後端 API");
+                    if (typeof showModal === 'function') {
                         showModal('錯誤', '後端 API 尚未就緒，請稍後再試');
+                    } else {
+                        console.error("[confirmDownload] showModal 未定義");
+                        alert('錯誤：後端 API 尚未就緒，請稍後再試');
+                    }
+                    return;
+                }
+
+                // 檢查文件是否存在
+                try {
+                    console.log('[confirmDownload] 開始檢查文件是否存在');
+                    const checkResult = await backend.check_file_exists_before_download(url, quality, format, format);
+                    console.log("[confirmDownload] 文件存在檢查結果:", checkResult);
+                    
+                    if (checkResult && checkResult.startsWith('FILE_EXISTS:')) {
+                        // 文件已存在，詢問用戶是否下載
+                        const existingFile = checkResult.substring('FILE_EXISTS:'.length);
+                        const fileName = existingFile.split(/[/\\]/).pop();
+                        console.log("[confirmDownload] 文件已存在:", fileName);
+                        
+                        if (typeof showConfirmModal !== 'function') {
+                            console.error("[confirmDownload] showConfirmModal 未定義");
+                            alert('錯誤：showConfirmModal 函數未定義');
+                            return;
+                        }
+                        
+                        showConfirmModal(
+                            '文件已存在',
+                            '目標資料夾中已存在同名文件：<br><strong>' + fileName + '</strong><br><br>是否要刪除舊文件並重新下載？',
+                            () => {
+                                console.log("[confirmDownload] 用戶確認重新下載");
+                                // 用戶確認刪除並重新下載
+                                // 將任務加入佇列並渲染
+                                const taskId = nextTaskId++;
+                                console.log("[confirmDownload] 創建任務 ID:", taskId);
+                                
+                                if (typeof addDownloadTask !== 'function') {
+                                    console.error("[confirmDownload] addDownloadTask 未定義");
+                                    alert('錯誤：addDownloadTask 函數未定義');
+                                    return;
+                                }
+                                
+                                addDownloadTask({
+                                    id: taskId,
+                                    url: url,
+                                    title: lastVideoInfo.title || '未知影片',
+                                    thumbnail: lastVideoInfo.thumb || '',
+                                    uploader: lastVideoInfo.uploader || '未知作者',
+                                    duration: lastVideoInfo.duration || '00:00',
+                                    quality: quality,
+                                    format: format,
+                                    progress: 0,
+                                    status: '等待中',
+                                    filePath: '',
+                                    eta: ''
+                                });
+                                
+                                // 清理輸入狀態
+                                try { const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; } catch(e) { console.error("[confirmDownload] 清理輸入狀態時出錯:", e); }
+                                currentUrl = '';
+                                
+                                // 開始下載（用戶已確認重新下載，直接調用 confirm_redownload 刪除文件並下載）
+                                setTimeout(() => {
+                                    const backend2 = __getBackendApi();
+                                    if (backend2 && backend2.start_download) {
+                                        // 先調用 start_download 來創建 _pending_downloads 條目
+                                        backend2.start_download(taskId, url, quality, format)
+                                            .then(result => {
+                                                console.log("[confirmDownload] 下載任務啟動結果:", result);
+                                                // 如果返回 FILE_EXISTS，表示文件仍然存在，需要刪除並重新下載
+                                                if (result && result.startsWith('FILE_EXISTS:')) {
+                                                    console.log("[confirmDownload] 文件仍然存在，調用 confirm_redownload 刪除並重新下載");
+                                                    if (backend2 && backend2.confirm_redownload) {
+                                                        // 使用 setTimeout 確保不阻塞 UI
+                                                        setTimeout(() => {
+                                                            backend2.confirm_redownload(taskId, true)
+                                                                .then(redownloadResult => {
+                                                                    console.log("[confirmDownload] confirm_redownload 結果:", redownloadResult);
+                                                                })
+                                                                .catch(error => {
+                                                                    console.error("[confirmDownload] confirm_redownload 出錯:", error);
+                                                                    if (typeof showModal === 'function') {
+                                                                        showModal('錯誤', '刪除舊文件並重新下載時發生錯誤：' + error);
+                                                                    }
+                                                                });
+                                                        }, 10);
+                                                    } else {
+                                                        console.error("[confirmDownload] confirm_redownload 方法不存在");
+                                                        if (typeof showModal === 'function') {
+                                                            showModal('錯誤', '後端 API 不支持重新下載功能');
+                                                        }
+                                                    }
+                                                }
+                                            })
+                                            .catch(error => {
+                                                console.error("[confirmDownload] 啟動下載任務時出錯:", error);
+                                                if (typeof showModal === 'function') {
+                                                    showModal('錯誤', '啟動下載任務時發生錯誤');
+                                                }
+                                            });
+                                    }
+                                }, 0);
+                                
+                                if (typeof closeConfirmModal === 'function') {
+                                    closeConfirmModal();
+                                }
+                            }
+                        );
+                        // 如果用戶取消，不做任何事（不加入佇列，不跳轉）
                         return;
-                    }}
-                    backend.start_download(task.id, url, quality, format)
-                        .then(result => {{ 
-                            console.log("下載任務啟動結果:", result);
-                            // 檢查是否文件已存在
-                            if (result && result.startsWith('FILE_EXISTS:')) {{
-                                const existingFile = result.substring('FILE_EXISTS:'.length);
-                                const fileName = existingFile.split(/[/\\]/).pop();
-                                // 保存任務ID以便在取消時使用
-                                window._pendingTaskId = task.id;
-                                showConfirmModal(
-                                    '文件已存在',
-                                    `目標資料夾中已存在同名文件：<br><strong>${fileName}</strong><br><br>是否要刪除舊文件並重新下載？`,
-                                    () => {{
-                                        // 用戶確認刪除並重新下載
-                                        const taskId = window._pendingTaskId;
-                                        delete window._pendingTaskId;
-                                        const backend2 = __getBackendApi();
-                                        backend2.confirm_redownload(taskId, true)
-                                            .then(result => {{
-                                                console.log("確認重新下載結果:", result);
-                                                if (result && result.includes('失敗')) {{
-                                                    showModal('錯誤', result);
-                                                }}
-                                            }})
-                                            .catch(error => {{
-                                                console.error("確認重新下載時出錯:", error);
-                                                showModal('錯誤', '確認重新下載時發生錯誤');
-                                            }});
-                                        closeConfirmModal();
-                                    }}
-                                );
-                            }}
-                        }})
-                        .catch(error => {{ console.error("啟動下載任務時出錯:", error); }});
-                }} catch (e) {{
-                    console.error("排程下載任務時出錯:", e);
-                }}
-            }}, 0);
-        }}
+                    }
+                } catch (error) {
+                    console.error("[confirmDownload] 檢查文件是否存在時出錯:", error);
+                    console.error("[confirmDownload] 錯誤堆棧:", error.stack);
+                    // 出錯時假設文件不存在，繼續下載流程
+                }
+
+                // 文件不存在，直接將任務加入佇列並開始下載
+                console.log("[confirmDownload] 文件不存在，開始下載");
+                const taskId = nextTaskId++;
+                console.log("[confirmDownload] 創建任務 ID:", taskId);
+                
+                if (typeof addDownloadTask !== 'function') {
+                    console.error("[confirmDownload] addDownloadTask 未定義");
+                    alert('錯誤：addDownloadTask 函數未定義');
+                    return;
+                }
+                
+                addDownloadTask({
+                    id: taskId,
+                    url: url,
+                    title: lastVideoInfo.title || '未知影片',
+                    thumbnail: lastVideoInfo.thumb || '',
+                    uploader: lastVideoInfo.uploader || '未知作者',
+                    duration: lastVideoInfo.duration || '00:00',
+                    quality: quality,
+                    format: format,
+                    progress: 0,
+                    status: '等待中',
+                    filePath: '',
+                    eta: ''
+                });
+
+                // 清理輸入狀態
+                try { const urlInput = document.getElementById('video-url'); if (urlInput) urlInput.value = ''; } catch(e) { console.error("[confirmDownload] 清理輸入狀態時出錯:", e); }
+                currentUrl = '';
+
+                // 開始下載
+                setTimeout(() => {
+                    try {
+                        const backend2 = __getBackendApi();
+                        if (!backend2 || !backend2.start_download) {
+                            console.error("[confirmDownload] 找不到後端 API（start_download）");
+                            if (typeof showModal === 'function') {
+                                showModal('錯誤', '後端 API 尚未就緒，請稍後再試');
+                            }
+                            return;
+                        }
+                        backend2.start_download(taskId, url, quality, format)
+                            .then(result => {
+                                console.log("[confirmDownload] 下載任務啟動結果:", result);
+                            })
+                            .catch(error => {
+                                console.error("[confirmDownload] 啟動下載任務時出錯:", error);
+                                if (typeof showModal === 'function') {
+                                    showModal('錯誤', '啟動下載任務時發生錯誤');
+                                }
+                            });
+                    } catch (e) {
+                        console.error("[confirmDownload] 排程下載任務時出錯:", e);
+                        console.error("[confirmDownload] 錯誤堆棧:", e.stack);
+                    }
+                }, 0);
+            } catch (error) {
+                console.error("[confirmDownload] 函數執行出錯:", error);
+                console.error("[confirmDownload] 錯誤堆棧:", error.stack);
+                if (typeof showModal === 'function') {
+                    showModal('錯誤', '下載確認時發生錯誤：' + error.message);
+                } else {
+                    alert('錯誤：下載確認時發生錯誤：' + error.message);
+                }
+            }
+        }
 
         /**
          * 將一個下載任務添加到佇列並更新顯示。
-         * @param {{Object}} task - 下載任務物件。
+         * @param {Object} task - 下載任務物件。
          */
-        function addDownloadTask(task) {{
-            downloadQueue.push(task);
+        function addDownloadTask(task) {
+            downloadQueue.unshift(task); // 新增到佇列最上方
             renderQueue(); // 重新渲染整個佇列
             // 如果在主頁添加任務，切換到佇列頁面
             showPage('queue');
-        }}
+        }
 
         /**
          * 渲染或更新下載佇列的顯示。
          */
-        function renderQueue() {{
+        function renderQueue() {
             const queueList = document.getElementById('queue-list');
             queueList.innerHTML = ''; // 清空現有內容以重新渲染
 
-            if (downloadQueue.length === 0) {{
+            if (downloadQueue.length === 0) {
                 queueList.innerHTML = `<p style="text-align: center; color: #888; font-size: 18px; margin-top: 50px;">目前沒有下載任務。</p>`;
                 return;
-            }}
+            }
 
-            downloadQueue.forEach((task, index) => {{
+            // 對佇列進行排序：
+            // 1. 正在下載的排在最上方（按 id 降序，新的在上）
+            // 2. 下載完畢的排在正在下載的下方（按 id 降序）
+            // 3. 等待中的排在最下方（按 id 降序）
+            const sortedQueue = [...downloadQueue].sort((a, b) => {
+                // 定義狀態優先級：下載中 > 已完成 > 等待中
+                const statusPriority = {
+                    '下載中': 3,
+                    '已完成': 2,
+                    '等待中': 1
+                };
+                const priorityA = statusPriority[a.status] || 0;
+                const priorityB = statusPriority[b.status] || 0;
+                
+                // 先按狀態優先級排序
+                if (priorityA !== priorityB) {
+                    return priorityB - priorityA; // 優先級高的在前
+                }
+                
+                // 相同狀態時，按 id 降序排序（新的在上）
+                return b.id - a.id;
+            });
+
+            sortedQueue.forEach((task, index) => {
                 // 創建任務項目
                 const itemDiv = document.createElement('div');
                 itemDiv.classList.add('queue-item');
@@ -2842,12 +3141,37 @@
                 const displayUrl = task.url.length > 50 ? task.url.substring(0, 47) + '...' : task.url;
 
                 let thumbnailContent;
-                if (task.thumbnail) {{
+                if (task.thumbnail) {
                     const escThumb = String(task.thumbnail).replace(/\"/g, '&quot;');
                     thumbnailContent = `<img class=\"queue-item-thumbnail-image\" src=\"${escThumb}\" alt=\"影片縮圖\" onerror=\"this.style.display='none';this.parentNode.innerHTML='<div class=\\'queue-item-thumbnail-text\\'>找不到縮圖</div>'\">`;
-                }} else {{
+                } else {
                     thumbnailContent = `<div class=\"queue-item-thumbnail-text\">找不到縮圖</div>`;
-                }}
+                }
+
+                // 判斷是否為已完成狀態
+                const isCompleted = task.status === '已完成';
+                
+                // 為已完成任務添加 completed 類
+                if (isCompleted) {
+                    itemDiv.classList.add('completed');
+                }
+                
+                // 根據狀態決定顯示內容
+                let progressContent = '';
+                if (isCompleted) {
+                    // 下載完畢：不顯示進度條，改用醒目標示
+                    progressContent = `
+                        <div class="completed-badge">下載完成</div>
+                    `;
+                } else {
+                    // 未完成：顯示進度條
+                    progressContent = `
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${task.progress}%;"></div>
+                        </div>
+                        <div class="progress-text">${task.status} (${task.progress.toFixed(1)}%)</div>
+                    `;
+                }
 
                 itemDiv.innerHTML = `
                     <div class="queue-item-thumbnail">
@@ -2855,19 +3179,16 @@
                     </div>
                     <div class="queue-item-info">
                         <div class="queue-item-title">${task.title}</div>
-                        <div class="queue-item-meta">${task.uploader} · ${task.duration}</div>
+                        <div class="queue-item-meta">${task.uploader} · ${task.duration} · ${task.quality} · ${task.format.toUpperCase()}</div>
                         <div class="queue-item-url">
                             <a href="${task.url}" class="queue-item-link" data-url="${task.url}" title="${task.url}">
                                 ${displayUrl}
                             </a>
                         </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" style="width: ${task.progress}%;"></div>
-                        </div>
-                        <div class="progress-text">${task.status} (${task.progress.toFixed(1)}%)</div>
+                        ${progressContent}
                     </div>
                     <div class="queue-item-actions">
-                        <button class="queue-item-action-btn" onclick="openFileLocation(${task.id})" disabled>
+                        <button class="queue-item-action-btn" onclick="openFileLocation(${task.id})" ${isCompleted ? '' : 'disabled'}>
                             <img src="assets/folder.png" alt="開啟檔案位置">
                         </button>
                     </div>
@@ -2876,187 +3197,267 @@
 
                 // 為連結添加點擊事件處理器
                 const linkElement = itemDiv.querySelector('.queue-item-link');
-                if (linkElement) {{
-                    linkElement.addEventListener('click', function(ev) {{
+                if (linkElement) {
+                    linkElement.addEventListener('click', function(ev) {
                         ev.preventDefault();
                         ev.stopPropagation();
                         const url = this.getAttribute('data-url') || this.getAttribute('href');
-                        if (url) {{
-                            try {{
-                                if (window.api && window.api.open_external_link) {{
+                        if (url) {
+                            try {
+                                if (window.api && window.api.open_external_link) {
                                     window.api.open_external_link(url);
-                                }} else {{
+                                } else {
                                     // 備用方案
                                     console.warn('window.api.open_external_link 不可用，嘗試使用 window.open');
                                     window.open(url, '_blank');
-                                }}
-                            }} catch(e) {{
+                                }
+                            } catch(e) {
                                 console.error('無法開啟外部連結:', e);
                                 // 最後的備用方案
-                                try {{
+                                try {
                                     window.open(url, '_blank');
-                                }} catch(_) {{
+                                } catch(_) {
                                     console.error('window.open 也失敗了');
-                                }}
-                            }}
-                        }}
-                    }});
-                }}
+                                }
+                            }
+                        }
+                    });
+                }
 
                 // 如果不是最後一個項目，添加分隔線
-                if (index < downloadQueue.length - 1) {{
+                if (index < sortedQueue.length - 1) {
                     const separatorDiv = document.createElement('div');
                     separatorDiv.classList.add('queue-separator');
                     queueList.appendChild(separatorDiv);
-                }}
-            }});
-        }}
+                }
+            });
+        }
 
         // **重要：新增一個函數來更新特定任務的進度**
         // 這個函數將由 Python 後端呼叫（透過 pywebview.api.update_progress）
-        window.updateDownloadProgress = function(taskId, progress, status = '下載中', message = '', filePath = '') {{
-            const taskIndex = downloadQueue.findIndex(task => task.id === taskId);
-            if (taskIndex !== -1) {{
-                downloadQueue[taskIndex].progress = progress;
-                downloadQueue[taskIndex].status = status;
+        // 使用格式標籤來避免同名文件不同格式時抓錯狀態
+        window.updateDownloadProgress = function(taskId, progress, status = '下載中', message = '', filePath = '', format = '') {
+            // 嚴格使用 taskId 來查找任務
+            let taskIndex = downloadQueue.findIndex(task => task.id === taskId);
+            
+            // 如果找到了任務，驗證格式是否匹配（如果提供了 format）
+            if (taskIndex !== -1 && format) {
+                const task = downloadQueue[taskIndex];
+                // 如果格式不匹配，說明可能找錯了任務，不更新
+                if (task.format.toLowerCase() !== format.toLowerCase()) {
+                    console.warn(`任務 ${taskId} 格式不匹配：任務格式為 ${task.format}，但後端傳遞的格式為 ${format}，跳過更新以避免錯誤更新其他任務`);
+                    console.warn(`任務詳情：ID=${task.id}, URL=${task.url}, 格式=${task.format}, 狀態=${task.status}`);
+                    // 嘗試通過 URL + 格式來查找正確的任務
+                    const correctTask = downloadQueue.find(t => 
+                        t.url === task.url && 
+                        t.format.toLowerCase() === format.toLowerCase() &&
+                        t.id !== taskId
+                    );
+                    if (correctTask) {
+                        console.log(`找到正確的任務：ID=${correctTask.id}, 格式=${correctTask.format}`);
+                        taskIndex = downloadQueue.indexOf(correctTask);
+                    } else {
+                        return; // 不更新，避免錯誤更新其他任務
+                    }
+                }
+            }
+            
+            // 如果找不到任務，記錄警告但不更新
+            if (taskIndex === -1) {
+                console.warn(`找不到任務 ID ${taskId}，跳過進度更新`);
+                return;
+            }
+            
+            if (taskIndex !== -1) {
+                const task = downloadQueue[taskIndex];
+                const oldStatus = task.status;
+                
+                // 如果任務已經完成，不應該再更新（避免已完成任務被重置）
+                if (oldStatus === '已完成' && status !== '已完成') {
+                    console.warn(`任務 ${taskId} (格式: ${task.format}) 已經完成，不應該更新為 ${status}，跳過更新以避免錯誤更新`);
+                    return;
+                }
+                
+                // 更新任務狀態
+                task.progress = progress;
+                task.status = status;
                 // 保存 ETA 信息（如果 message 包含）
-                if (message) {{
-                    downloadQueue[taskIndex].eta = message;
-                }}
-                if (filePath) {{
-                    downloadQueue[taskIndex].filePath = filePath; // 更新檔案路徑
-                }}
-                // 找到對應的 DOM 元素並更新
+                if (message) {
+                    task.eta = message;
+                }
+                if (filePath) {
+                    task.filePath = filePath; // 更新檔案路徑
+                }
+                
+                // 如果狀態改變（特別是從下載中變為已完成），需要重新排序和渲染
+                if (oldStatus !== status) {
+                    console.log(`任務 ${taskId} (格式: ${task.format}) 狀態從 "${oldStatus}" 變為 "${status}"`);
+                    renderQueue(); // 重新渲染整個佇列以更新排序
+                    return;
+                }
+                
+                // 如果狀態沒變，只更新進度顯示
                 const itemDiv = document.querySelector(`.queue-item[data-task-id="${taskId}"]`);
-                if (itemDiv) {{
+                if (itemDiv) {
+                    const isCompleted = status === '已完成';
+                    const progressContainer = itemDiv.querySelector('.progress-bar-container');
                     const progressBar = itemDiv.querySelector('.progress-bar');
                     const progressText = itemDiv.querySelector('.progress-text');
+                    const completedBadge = itemDiv.querySelector('.completed-badge');
                     const openFolderBtn = itemDiv.querySelector('.queue-item-action-btn');
                     
-                    if (progressBar) {{
-                        progressBar.style.width = `${progress}%`;
-                    }}
-                    if (progressText) {{
-                        // 顯示進度文本（status 中已包含 ETA 信息）
-                        progressText.innerText = `${status} (${progress.toFixed(1)}%)`;
-                    }}
-                    // 只有當狀態為「已完成」時才啟用按鈕（不再依賴filePath）
-                    if (openFolderBtn) {{
-                        if (status === '已完成') {{
+                    if (isCompleted) {
+                        // 如果狀態變為已完成，添加 completed 類，移除進度條，顯示完成標示
+                        itemDiv.classList.add('completed');
+                        if (progressContainer && progressText) {
+                            progressContainer.remove();
+                            progressText.remove();
+                            const infoDiv = itemDiv.querySelector('.queue-item-info');
+                            if (infoDiv && !completedBadge) {
+                                const badge = document.createElement('div');
+                                badge.classList.add('completed-badge');
+                                badge.textContent = '下載完成';
+                                infoDiv.appendChild(badge);
+                            }
+                        }
+                    } else {
+                        // 移除 completed 類
+                        itemDiv.classList.remove('completed');
+                        // 更新進度條
+                        if (progressBar) {
+                            progressBar.style.width = `${progress}%`;
+                        }
+                        if (progressText) {
+                            progressText.innerText = `${status} (${progress.toFixed(1)}%)`;
+                        }
+                        // 移除完成標示（如果存在）
+                        if (completedBadge) {
+                            completedBadge.remove();
+                        }
+                    }
+                    
+                    // 更新按鈕狀態：只有狀態為"已完成"時才啟用
+                    if (openFolderBtn) {
+                        if (status === '已完成') {
                             openFolderBtn.disabled = false; // 啟用按鈕
                             openFolderBtn.style.opacity = '1';
                             openFolderBtn.style.cursor = 'pointer';
-                        }} else {{
+                        } else {
                             openFolderBtn.disabled = true; // 禁用按鈕
                             openFolderBtn.style.opacity = '0.5'; // 變灰
                             openFolderBtn.style.cursor = 'not-allowed';
-                        }}
-                    }}
-                }}
-            }}
-        }};
+                        }
+                    }
+                }
+            }
+        };
 
         /**
-         * 開啟下載檔案所在位置。
-         * @param {{number}} taskId - 任務ID。
+         * 開啟下載檔案所在位置。後端會立即回傳，實際開啟在背景執行，避免卡住 UI。
+         * @param {number} taskId - 任務ID。
          */
-        function openFileLocation(taskId) {{
+        function openFileLocation(taskId) {
             const task = downloadQueue.find(t => t.id === taskId);
-            if (!task) {{
-                console.error("找不到任務:", taskId);
+            if (!task) {
                 showModal("錯誤", "找不到指定的下載任務。");
                 return;
-            }}
-            
-            // 使用新的API方法，根據任務ID自動追蹤檔案位置
-            if (window.api) {{
-                window.api.open_file_location_by_task(taskId)
-                    .then(result => {{
-                        console.log("開啟檔案位置結果:", result);
-                        if (result.includes("失敗") || result.includes("錯誤")) {{
-                            showModal("錯誤", result);
-                        }}
-                    }})
-                    .catch(error => {{
-                        console.error("開啟檔案位置時出錯:", error);
-                        showModal("錯誤", "無法開啟檔案位置。");
-                    }});
-            }} else {{
+            }
+            const btn = document.querySelector(`.queue-item[data-task-id="${taskId}"] .queue-item-action-btn`);
+            if (btn) {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                setTimeout(function() {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                }, 1500);
+            }
+            if (!window.api) {
                 showModal("錯誤", "API 未初始化");
-            }}
-        }}
+                return;
+            }
+            window.api.open_file_location_by_task(taskId)
+                .then(function(result) {
+                    if (result && (result.includes("失敗") || result.includes("錯誤"))) {
+                        showModal("錯誤", result);
+                    }
+                })
+                .catch(function(error) {
+                    console.error("開啟檔案位置時出錯:", error);
+                    showModal("錯誤", "無法開啟檔案位置。");
+                });
+        }
 
 
 
 
 
         // 點擊外部關閉下拉選單
-        document.addEventListener('click', function(event) {{
+        document.addEventListener('click', function(event) {
             const qualitySelect = document.getElementById('quality-select');
             const formatSelect = document.getElementById('format-select');
             
             // 只有在影片選擇模態視窗才處理畫質和格式選擇的關閉
             const videoModal = document.getElementById('video-modal-bg');
-            if (videoModal && videoModal.classList.contains('show')) {{
-                if (qualitySelect && !qualitySelect.contains(event.target)) {{
+            if (videoModal && videoModal.classList.contains('show')) {
+                if (qualitySelect && !qualitySelect.contains(event.target)) {
                     closeSelect('quality-select');
-                }}
-                if (formatSelect && !formatSelect.contains(event.target)) {{
+                }
+                if (formatSelect && !formatSelect.contains(event.target)) {
                     closeSelect('format-select');
-                }}
-            }}
+                }
+            }
             
             // 關閉播放清單下拉選單
             const playlistModal = document.getElementById('playlist-modal-bg');
-            if (playlistModal && playlistModal.style.display !== 'none') {{
+            if (playlistModal && playlistModal.style.display !== 'none') {
                 const allPlaylistSelects = document.querySelectorAll('.playlist-video-controls .custom-select');
-                allPlaylistSelects.forEach(select => {{
-                    if (!select.contains(event.target)) {{
+                allPlaylistSelects.forEach(select => {
+                    if (!select.contains(event.target)) {
                         const options = select.querySelector('.custom-select-options');
                         const header = select.querySelector('.custom-select-header');
-                        if (options && header) {{
+                        if (options && header) {
                             options.classList.remove('show');
                             header.classList.remove('active');
-                        }}
-                    }}
-                }});
-            }}
-        }});
+                        }
+                    }
+                });
+            }
+        });
 
         // 禁止右鍵選單
-        document.addEventListener('contextmenu', (e) => {{
+        document.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             return false;
-        }});
+        });
         
         // 禁止鍵盤快捷鍵（F12、Ctrl+Shift+I、Ctrl+U等）
-        document.addEventListener('keydown', (e) => {{
+        document.addEventListener('keydown', (e) => {
             // 禁止 F12（開發者工具）
-            if (e.key === 'F12') {{
+            if (e.key === 'F12') {
                 e.preventDefault();
                 return false;
-            }}
+            }
             // 禁止 Ctrl+Shift+I（開發者工具）
-            if (e.ctrlKey && e.shiftKey && e.key === 'I') {{
+            if (e.ctrlKey && e.shiftKey && e.key === 'I') {
                 e.preventDefault();
                 return false;
-            }}
+            }
             // 禁止 Ctrl+Shift+J（開發者工具）
-            if (e.ctrlKey && e.shiftKey && e.key === 'J') {{
+            if (e.ctrlKey && e.shiftKey && e.key === 'J') {
                 e.preventDefault();
                 return false;
-            }}
+            }
             // 禁止 Ctrl+U（查看原始碼）
-            if (e.ctrlKey && e.key === 'U') {{
+            if (e.ctrlKey && e.key === 'U') {
                 e.preventDefault();
                 return false;
-            }}
+            }
             // 禁止 Ctrl+S（儲存頁面）
-            if (e.ctrlKey && e.key === 'S') {{
+            if (e.ctrlKey && e.key === 'S') {
                 e.preventDefault();
                 return false;
-            }}
-        }});
+            }
+        });
 
         // 播放清單相關變數
         let currentPlaylistData = null;
@@ -3962,25 +4363,25 @@
         }
 
         // 首次載入時，綁定Enter事件並顯示主頁
-        document.addEventListener('DOMContentLoaded', () => {{
+        document.addEventListener('DOMContentLoaded', () => {
             const homeInput = document.getElementById('video-url');
-            if (homeInput) {{
-                homeInput.addEventListener('keypress', (e) => {{
-                    if (e.key === 'Enter') {{
+            if (homeInput) {
+                homeInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
                         downloadVideo();
-                    }}
-                }});
-            }}
+                    }
+                });
+            }
             const queueInput = document.getElementById('queue-video-url');
-            if (queueInput) {{
-                queueInput.addEventListener('keypress', (e) => {{
-                    if (e.key === 'Enter') {{
+            if (queueInput) {
+                queueInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
                         downloadVideoFromQueue();
-                    }}
-                }});
-            }}
+                    }
+                });
+            }
             showPage('home');
-        }});
+        });
     </script>
 </body>
 </html>

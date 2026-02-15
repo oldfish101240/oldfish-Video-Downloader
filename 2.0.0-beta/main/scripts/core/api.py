@@ -20,14 +20,48 @@ root_dir = os.path.dirname(parent_dir)  # main
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from PySide6.QtCore import QObject, Slot, Signal
+from PySide6.QtCore import QObject, Slot, Signal, QTimer, QEventLoop
 from PySide6.QtWidgets import QFileDialog
-from scripts.utils.logger import api_console, download_console, video_info_console, LogLevel
+from scripts.utils.logger import api_console, download_console, video_info_console, debug_console, LogLevel
 from scripts.utils.file_utils import safe_path_join, get_download_path, resolve_relative_path, get_deno_path
 from scripts.utils.version_utils import compare_versions
 from scripts.config.settings import SettingsManager
 from .video_info import extract_video_info, is_playlist_url, extract_playlist_info, get_video_qualities_and_formats
 from .downloader import Downloader, DownloadScheduler
+
+
+def _open_in_explorer_win(path):
+    """
+    在 Windows 用檔案總管開啟路徑；若為檔案則開啟所在資料夾並選取該檔案。
+    使用 list 形式 + DETACHED_PROCESS，不經 shell，避免阻塞主程式。
+    """
+    api_console("[DBG] _open_in_explorer_win 進入", level=LogLevel.DEBUG)
+    path = os.path.normpath(os.path.abspath(path))
+    if not os.path.exists(path):
+        folder = os.path.dirname(path)
+        if os.path.exists(folder):
+            path = folder
+        else:
+            api_console("[DBG] _open_in_explorer_win 路徑不存在，return", level=LogLevel.DEBUG)
+            return
+    creationflags = 0
+    if sys.platform.startswith("win"):
+        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    try:
+        if os.path.isdir(path):
+            api_console("[DBG] _open_in_explorer_win 即將 Popen(explorer 資料夾)", level=LogLevel.DEBUG)
+            subprocess.Popen(["explorer", path], creationflags=creationflags)
+        else:
+            api_console("[DBG] _open_in_explorer_win 即將 Popen(explorer /select)", level=LogLevel.DEBUG)
+            subprocess.Popen(["explorer", "/select,", path], creationflags=creationflags)
+        api_console("[DBG] _open_in_explorer_win Popen 已呼叫，結束", level=LogLevel.DEBUG)
+    except Exception as e:
+        api_console(f"開啟檔案總管失敗: {e}，嘗試僅開啟資料夾", level=LogLevel.ERROR)
+        try:
+            subprocess.Popen(["explorer", os.path.dirname(path)], creationflags=creationflags)
+        except Exception as e2:
+            api_console(f"開啟資料夾也失敗: {e2}", level=LogLevel.ERROR)
+
 
 class Api(QObject):
     """主要 API 類別"""
@@ -39,6 +73,32 @@ class Api(QObject):
     notificationRequested = Signal(str, str)
     updateDialogRequested = Signal('QVariant')  # 更新對話框請求信號
     
+    @Slot(str, str, result=str)
+    def log_from_js(self, level, message):
+        """接收來自 JavaScript 的日誌訊息並輸出到 Python console"""
+        try:
+            from scripts.utils.logger import debug_console, info_console, warning_console, error_console, LogLevel
+            
+            # 將 JavaScript 的日誌級別映射到 Python 的日誌級別
+            level_lower = level.lower()
+            if level_lower == 'error':
+                error_console(f"[JS] {message}", tag="前端")
+            elif level_lower == 'warn' or level_lower == 'warning':
+                warning_console(f"[JS] {message}", tag="前端")
+            elif level_lower == 'info':
+                info_console(f"[JS] {message}", tag="前端")
+            elif level_lower == 'debug':
+                debug_console(f"[JS] {message}", tag="前端")
+            else:
+                # 預設使用 info 級別
+                info_console(f"[JS] {message}", tag="前端")
+            
+            return "OK"
+        except Exception as e:
+            # 如果日誌系統出錯，至少用 print 輸出
+            print(f"[JS日誌接收器錯誤] {e}: {message}")
+            return "ERROR"
+    
     def __init__(self, page, root_dir):
         super().__init__()
         self.page = page
@@ -46,10 +106,16 @@ class Api(QObject):
         self.download_threads = {}
         self.completed_tasks = set()
         self.settings_process = None
+        # 保護 task_download_paths / task_formats / downloading_urls / pending_tasks_by_url 等。
+        # 持鎖時僅做 dict/set 讀寫，不得呼叫 _safe_eval_js、_process_pending_tasks_for_url 或 thread.join，避免卡死主線程或死鎖。
         self._lock = threading.Lock()
         self.task_has_postprocessing = {}
         self.task_in_postprocessing = {}
         self.task_download_paths = {}  # 追蹤每個任務的下載路徑
+        self.task_formats = {}  # 追蹤每個任務的格式（用於避免同名文件不同格式時抓錯狀態）
+        self.task_urls = {}  # 追蹤每個任務的 URL（用於檢查同名影片）
+        self.downloading_urls = set()  # 正在下載的 URL 集合
+        self.pending_tasks_by_url = {}  # 按 URL 分組的等待任務列表
         self.notification_handler = None
         self._last_progress_percent = {}
         
@@ -462,7 +528,9 @@ class Api(QObject):
                     safe_args.append(json.dumps(str(arg)))
             
             js_call = f"{function_name}({', '.join(safe_args)})"
+            api_console(f"[DBG] _safe_eval_js 即將 emit → {function_name}(...) 長度={len(js_call)}", level=LogLevel.DEBUG)
             self._eval_js(js_call)
+            api_console(f"[DBG] _safe_eval_js emit 已回傳", level=LogLevel.DEBUG)
         except Exception as e:
             api_console(f"安全JavaScript執行失敗: {e}", level=LogLevel.WARNING)
             try:
@@ -475,7 +543,9 @@ class Api(QObject):
     def _on_eval_js_requested(self, script):
         """處理 JavaScript 執行請求"""
         try:
+            api_console("[DBG] _on_eval_js_requested 即將 runJavaScript（主線程）", level=LogLevel.DEBUG)
             self.page.runJavaScript(script)
+            api_console("[DBG] _on_eval_js_requested runJavaScript 已回傳", level=LogLevel.DEBUG)
         except Exception as e:
             api_console(f"JavaScript執行失敗: {e}", level=LogLevel.ERROR)
     
@@ -541,14 +611,28 @@ class Api(QObject):
                 # 傳遞當前檔案路徑（若可得）以保持與舊版一致
                 file_arg = d.get('filename') or ''
                 safe_file_arg = (file_arg or '').replace('\\', '/')
-                # 傳遞 status（已包含 ETA）給前端
-                self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status, '', safe_file_arg)
+                # 獲取任務格式（用於避免同名文件不同格式時抓錯狀態）
+                task_format = ''
+                task_url = ''
+                with self._lock:
+                    task_format = self.task_formats.get(str(task_id), '')
+                    task_url = self.task_urls.get(str(task_id), '')
+                download_console(f"[進度更新] 任務{task_id}: {percent:.1f}% - {status}, 格式: {task_format}, URL: {task_url}", level=LogLevel.DEBUG)
+                # 傳遞 status（已包含 ETA）和格式給前端
+                self._safe_eval_js("window.updateDownloadProgress", task_id, percent, status, '', safe_file_arg, task_format)
             elif status_key == 'finished':
                 try:
                     download_console(f"任務 {task_id} 已完成", level=LogLevel.INFO)
                     file_arg = d.get('filename') or ''
                     safe_file_arg = (file_arg or '').replace('\\', '/')
-                    self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file_arg)
+                    # 獲取任務格式
+                    task_format = ''
+                    task_url = ''
+                    with self._lock:
+                        task_format = self.task_formats.get(str(task_id), '')
+                        task_url = self.task_urls.get(str(task_id), '')
+                    download_console(f"[完成通知] 任務{task_id}: 已完成, 格式: {task_format}, URL: {task_url}", level=LogLevel.DEBUG)
+                    self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file_arg, task_format)
                 except Exception as e:
                     download_console(f"完成進度回報失敗: {e}", level=LogLevel.ERROR)
             else:
@@ -564,20 +648,31 @@ class Api(QObject):
         try:
             with self._lock:
                 p = self._last_progress_percent.get(str(task_id), 0.0)
-            self._safe_eval_js("window.updateDownloadProgress", int(task_id), float(p), str(status_text), '', '')
+                task_format = self.task_formats.get(str(task_id), '')
+            self._safe_eval_js("window.updateDownloadProgress", int(task_id), float(p), str(status_text), '', '', task_format)
         except Exception:
             pass
     
     def _notify_download_complete_safely(self, task_id, url, error=None, file_path=None):
         """安全地通知下載完成"""
         try:
+            download_console(f"[DBG] _notify_download_complete_safely 進入 task_id={task_id}", level=LogLevel.DEBUG)
+            download_console("[DBG] _notify_download_complete_safely 即將取得 _lock(completed_tasks)", level=LogLevel.DEBUG)
             with self._lock:
                 if task_id in self.completed_tasks:
+                    download_console("[DBG] _notify_download_complete_safely 已完成過，return", level=LogLevel.DEBUG)
                     return
                 self.completed_tasks.add(task_id)
-            
+            download_console("[DBG] _notify_download_complete_safely 已釋放 _lock(completed_tasks)", level=LogLevel.DEBUG)
+
             if error:
                 self._safe_eval_js("window.onDownloadError", task_id, error)
+                # 即使出錯，也要移除正在下載標記，並處理等待中的任務
+                with self._lock:
+                    if url in self.downloading_urls:
+                        self.downloading_urls.discard(url)
+                download_console("[DBG] _notify_download_complete_safely 即將 _process_pending_tasks_for_url (error 分支)", level=LogLevel.DEBUG)
+                self._process_pending_tasks_for_url(url)
             else:
                 # 記錄最終檔案路徑到任務追蹤中
                 if file_path:
@@ -587,17 +682,31 @@ class Api(QObject):
                 
                 # 與舊版一致，將最終檔案路徑傳給前端以啟用「開啟資料夾」按鈕
                 safe_file = (file_path or '').replace('\\', '/')
-                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file)
-                self._safe_eval_js("window.onDownloadComplete", task_id)
+                # 獲取任務格式
+                task_format = ''
+                with self._lock:
+                    task_format = self.task_formats.get(str(task_id), '')
+                self._safe_eval_js("window.updateDownloadProgress", task_id, 100, "已完成", '', safe_file, task_format)
                 
-                # 發送通知
-                settings = self.settings_manager.load_settings()
-                if settings.get('enableNotifications', True):
-                    try:
-                        self._safe_eval_js("window.__ofShowToast", "下載完成", f"任務 {task_id} 已完成")
-                    except Exception as toast_err:
-                        download_console(f"顯示 Toast 失敗: {toast_err}")
-                    self._send_notification("下載完成", f"任務 {task_id} 已完成")
+                # 移除正在下載標記（鎖內僅做狀態更新，鎖外再處理等待任務，避免死鎖）
+                with self._lock:
+                    if url in self.downloading_urls:
+                        self.downloading_urls.discard(url)
+                        download_console(f"任務 {task_id} 下載完成，移除 URL {url} 的正在下載標記")
+                download_console("[DBG] _notify_download_complete_safely 即將 _process_pending_tasks_for_url (完成分支)", level=LogLevel.DEBUG)
+                self._process_pending_tasks_for_url(url)
+
+            download_console("[DBG] _notify_download_complete_safely 即將 _safe_eval_js onDownloadComplete", level=LogLevel.DEBUG)
+            self._safe_eval_js("window.onDownloadComplete", task_id)
+            
+            # 發送通知
+            settings = self.settings_manager.load_settings()
+            if settings.get('enableNotifications', True):
+                try:
+                    self._safe_eval_js("window.__ofShowToast", "下載完成", f"任務 {task_id} 已完成")
+                except Exception as toast_err:
+                    download_console(f"顯示 Toast 失敗: {toast_err}")
+                self._send_notification("下載完成", f"任務 {task_id} 已完成")
                     
         except Exception as e:
             download_console(f"通知下載完成失敗: {e}", level=LogLevel.WARNING)
@@ -606,13 +715,27 @@ class Api(QObject):
     def choose_folder(self):
         """開啟 Windows 檔案總管的資料夾選擇對話方塊，回傳所選路徑（空字串代表取消）"""
         try:
-            # 使用原生對話框
-            options = QFileDialog.Options()
-            # 注意：PySide6 預設會用 native dialog，這裡保持預設即可
-            directory = QFileDialog.getExistingDirectory(None, '選擇資料夾', self.root_dir, QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
-            if directory:
-                return directory
-            return ''
+            # 使用 QTimer.singleShot 延遲至下一個事件循環迭代，
+            # 避免從 QWebChannel（JavaScript）直接呼叫 QFileDialog 造成的死結
+            result_holder = [None]
+
+            def show_dialog():
+                try:
+                    directory = QFileDialog.getExistingDirectory(
+                        None, '選擇資料夾', self.root_dir,
+                        QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+                    )
+                    result_holder[0] = directory if directory else ''
+                except Exception as e:
+                    api_console(f"選擇資料夾失敗: {e}", level=LogLevel.ERROR)
+                    result_holder[0] = ''
+                finally:
+                    loop.quit()
+
+            loop = QEventLoop()
+            QTimer.singleShot(0, show_dialog)
+            loop.exec()
+            return result_holder[0] or ''
         except Exception as e:
             api_console(f"選擇資料夾失敗: {e}", level=LogLevel.ERROR)
             return ''
@@ -623,8 +746,123 @@ class Api(QObject):
         download_console(f"收到下載請求: {url}", level=LogLevel.INFO)
         return "下載功能尚未實作"
     
-    def _check_file_exists(self, url, quality, format_type, downloads_dir, add_resolution):
-        """檢查目標文件是否存在，返回文件路徑（如果存在）"""
+    def _process_pending_tasks_for_url(self, url):
+        """處理等待中的同名任務（當一個任務完成時）"""
+        try:
+            download_console(f"[DBG] _process_pending_tasks_for_url 進入 url={url[:50]}...", level=LogLevel.DEBUG)
+            download_console("[DBG] _process_pending_tasks_for_url 即將取得 _lock", level=LogLevel.DEBUG)
+            with self._lock:
+                if url not in self.pending_tasks_by_url:
+                    download_console("[DBG] _process_pending_tasks_for_url 無等待任務，return", level=LogLevel.DEBUG)
+                    return
+
+                pending_tasks = self.pending_tasks_by_url[url]
+                if not pending_tasks:
+                    download_console("[DBG] _process_pending_tasks_for_url 列表空，return", level=LogLevel.DEBUG)
+                    return
+
+                pending_task = pending_tasks.pop(0)
+                task_id = pending_task['task_id']
+
+                if not pending_tasks:
+                    del self.pending_tasks_by_url[url]
+
+                self.downloading_urls.add(url)
+            download_console("[DBG] _process_pending_tasks_for_url 已釋放 _lock", level=LogLevel.DEBUG)
+            download_console(f"開始下載等待中的任務 {task_id}（URL: {url}）", level=LogLevel.INFO)
+
+            task_format = ''
+            download_console("[DBG] _process_pending_tasks_for_url 即將取得 _lock(task_format)", level=LogLevel.DEBUG)
+            with self._lock:
+                task_format = self.task_formats.get(str(task_id), '')
+            download_console("[DBG] _process_pending_tasks_for_url 已釋放 _lock，即將 _safe_eval_js", level=LogLevel.DEBUG)
+            self._safe_eval_js("window.updateDownloadProgress", task_id, 0, "等待中", '', '', task_format)
+            
+            # 將任務提交到排程器
+            self.scheduler.submit(
+                task_id,
+                pending_task['url'],
+                pending_task['quality'],
+                pending_task['format'],
+                downloads_dir=pending_task['downloads_dir'],
+                add_resolution_to_filename=pending_task['add_resolution'],
+                original_format=pending_task['original_format'],
+            )
+        except Exception as e:
+            download_console(f"處理等待中的任務時出錯: {e}", level=LogLevel.ERROR)
+    
+    @Slot(str, str, str, str, result=str)
+    def check_file_exists_before_download(self, url, quality, format_type, original_format=None):
+        """在開始下載前檢查文件是否存在（不開始下載）"""
+        try:
+            # 規範化格式
+            fmt = (original_format or format_type or '').strip().lower()
+            if fmt in ('mp3', 'aac', 'flac', 'wav', 'audio'):
+                normalized_format = '音訊'
+            else:
+                normalized_format = '影片'
+            
+            # 規範化畫質
+            q = (quality or '').strip()
+            if normalized_format == '影片':
+                import re
+                m = re.search(r"(\d+)", q)
+                normalized_quality = m.group(1) if m else '1080'
+            else:
+                import re
+                m = re.search(r"(\d+)", q)
+                normalized_quality = m.group(1) if m else '320'
+            
+            # 獲取下載路徑
+            settings = self.settings_manager.load_settings()
+            add_resolution = settings.get('addResolutionToFilename', False)
+            resolved_download_dir = get_download_path(self.root_dir, self.settings_manager)
+            
+            # 檢查文件是否存在
+            existing_file = None
+            try:
+                import threading
+                
+                result = [None]
+                exception = [None]
+                
+                def check_file():
+                    try:
+                        result[0] = self._check_file_exists(url, normalized_quality, normalized_format, 
+                                                           resolved_download_dir, add_resolution, original_format=fmt)
+                    except Exception as e:
+                        exception[0] = e
+                
+                thread = threading.Thread(target=check_file, daemon=True)
+                thread.start()
+                thread.join(timeout=5)  # 5秒超時
+                
+                if thread.is_alive():
+                    download_console(f"文件存在檢查超時，跳過檢查", level=LogLevel.WARNING)
+                    existing_file = None
+                elif exception[0]:
+                    download_console(f"文件存在檢查出錯: {exception[0]}，跳過檢查", level=LogLevel.WARNING)
+                    existing_file = None
+                else:
+                    existing_file = result[0]
+            except Exception as e:
+                download_console(f"文件存在檢查失敗: {e}，跳過檢查", level=LogLevel.WARNING)
+                existing_file = None
+            
+            if existing_file:
+                return f"FILE_EXISTS:{existing_file}"
+            return "FILE_NOT_EXISTS"
+        except Exception as e:
+            download_console(f"檢查文件是否存在時出錯: {e}", level=LogLevel.ERROR)
+            return "FILE_NOT_EXISTS"  # 出錯時假設文件不存在，允許下載
+    
+    def _check_file_exists(self, url, quality, format_type, downloads_dir, add_resolution, original_format=None):
+        """檢查目標文件是否存在，返回文件路徑（如果存在）
+        
+        只檢查相同格式的文件，例如：
+        - 如果 original_format='mp3'，只檢查 .mp3 文件
+        - 如果 original_format='mp4'，只檢查 .mp4, .mkv, .webm 等影片格式
+        """
         try:
             # 先獲取視頻信息以確定標題和高度
             import yt_dlp
@@ -657,17 +895,25 @@ class Api(QObject):
             fmt = (format_type or '').strip().lower()
             if fmt in ('mp3', 'aac', 'flac', 'wav', 'audio'):
                 normalized_format = '音訊'
-                ext = 'mp3'
+                # 使用原始格式，如果沒有則預設為 mp3
+                if original_format:
+                    ext = original_format.strip().lower()
+                else:
+                    ext = 'mp3'
             else:
                 normalized_format = '影片'
-                ext = 'mp4'
+                # 使用原始格式，如果沒有則預設為 mp4
+                if original_format:
+                    ext = original_format.strip().lower()
+                else:
+                    ext = 'mp4'
             
             q = (quality or '').strip()
             import re as re_module
             m = re_module.search(r"(\d+)", q)
             qnum = m.group(1) if m else ('320' if normalized_format == '音訊' else '1080')
             
-            # 構建可能的文件名列表（因為 yt-dlp 可能會使用不同的格式）
+            # 構建可能的文件名列表
             possible_files = []
             
             # 獲取實際高度（用於影片）
@@ -685,30 +931,23 @@ class Api(QObject):
             # 根據設定構建可能的文件名
             if add_resolution:
                 if normalized_format == '音訊':
-                    # 音訊格式：標題_320kbps.mp3
+                    # 音訊格式：標題_320kbps.{ext}
                     possible_files.append(f"{safe_title}_{qnum}kbps.{ext}")
                 else:
-                    # 影片格式：標題_1080p.mp4
+                    # 影片格式：標題_1080p.{ext}
                     possible_files.append(f"{safe_title}_{height}p.{ext}")
             else:
-                # 預設格式：標題.mp4
+                # 預設格式：標題.{ext}
                 possible_files.append(f"{safe_title}.{ext}")
             
-            # 檢查文件是否存在（包括不同的擴展名）
+            # 檢查文件是否存在（只檢查相同格式）
             for filename in possible_files:
                 file_path = os.path.join(downloads_dir, filename)
                 if os.path.exists(file_path):
                     return file_path
             
-            # 也檢查其他可能的擴展名（mp4, mkv, webm等）
-            if normalized_format == '影片':
-                for ext_alt in ['mp4', 'mkv', 'webm', 'flv']:
-                    if add_resolution:
-                        alt_path = os.path.join(downloads_dir, f"{safe_title}_{height}p.{ext_alt}")
-                    else:
-                        alt_path = os.path.join(downloads_dir, f"{safe_title}.{ext_alt}")
-                    if os.path.exists(alt_path):
-                        return alt_path
+            # 只檢查用戶指定的格式，不檢查其他擴展名
+            # 這樣可以允許用戶下載同一影片的不同格式（例如已有 mp4，可以再下載 mp3）
             
             return None
         except Exception as e:
@@ -779,6 +1018,7 @@ class Api(QObject):
     def start_download(self, task_id, url, quality, format_type):
         """開始下載"""
         try:
+            download_console(f"[DBG] start_download 進入 task_id={task_id}", level=LogLevel.DEBUG)
             download_console(f"開始下載任務 {task_id}: {url}", level=LogLevel.INFO)
             # 規範化前端傳入的格式與畫質
             fmt = (format_type or '').strip().lower()
@@ -818,9 +1058,69 @@ class Api(QObject):
                 resolved_download_dir = safe_path_join(self.root_dir, 'downloads')
                 os.makedirs(resolved_download_dir, exist_ok=True)
 
-            # 檢查文件是否已存在
-            existing_file = self._check_file_exists(url, normalized_quality, normalized_format, 
-                                                   resolved_download_dir, add_resolution)
+            # 先檢查是否有同名影片正在下載（這個很快，不會阻塞）
+            download_console("[DBG] start_download 即將取得 _lock（檢查同名）", level=LogLevel.DEBUG)
+            with self._lock:
+                if url in self.downloading_urls:
+                    # 有同名影片正在下載，將任務加入等待佇列（僅在鎖內做 dict 更新，不呼叫 JS）
+                    download_console(f"發現同名影片正在下載: {url}，任務 {task_id} 將等待下載完成", level=LogLevel.INFO)
+                    self.task_download_paths[str(task_id)] = resolved_download_dir
+                    self.task_formats[str(task_id)] = fmt
+                    self.task_urls[str(task_id)] = url
+                    if url not in self.pending_tasks_by_url:
+                        self.pending_tasks_by_url[url] = []
+                    self.pending_tasks_by_url[url].append({
+                        'task_id': task_id,
+                        'url': url,
+                        'quality': normalized_quality,
+                        'format': normalized_format,
+                        'downloads_dir': resolved_download_dir,
+                        'add_resolution': add_resolution,
+                        'original_format': fmt,
+                    })
+                    need_waiting_ui = True
+                else:
+                    need_waiting_ui = False
+            download_console("[DBG] start_download 已釋放 _lock（檢查同名）", level=LogLevel.DEBUG)
+            if need_waiting_ui:
+                download_console("[DBG] start_download 即將 _safe_eval_js 等待中 UI", level=LogLevel.DEBUG)
+                self._safe_eval_js("window.updateDownloadProgress", task_id, 0, "等待同名影片下載完成", '', '', fmt)
+                return "已加入等待佇列（等待同名影片下載完成）"
+
+            # 檢查文件是否已存在（在背景線程執行，主線程僅短暫等待，避免 UI 卡死）
+            existing_file = None
+            try:
+                result = [None]
+                exception = [None]
+
+                def check_file():
+                    try:
+                        result[0] = self._check_file_exists(
+                            url, normalized_quality, normalized_format,
+                            resolved_download_dir, add_resolution, original_format=fmt
+                        )
+                    except Exception as e:
+                        exception[0] = e
+
+                thread = threading.Thread(target=check_file, daemon=True)
+                thread.start()
+                download_console("[DBG] start_download 主線程即將 thread.join(1.5s)", level=LogLevel.DEBUG)
+                # 主線程最多等 1.5 秒，避免長期佔用導致「開啟資料夾」等操作無回應
+                thread.join(timeout=1.5)
+                download_console("[DBG] start_download 主線程 thread.join 已返回", level=LogLevel.DEBUG)
+
+                if thread.is_alive():
+                    download_console("文件存在檢查超時，跳過檢查", level=LogLevel.WARNING)
+                    existing_file = None
+                elif exception[0]:
+                    download_console(f"文件存在檢查出錯: {exception[0]}，跳過檢查", level=LogLevel.WARNING)
+                    existing_file = None
+                else:
+                    existing_file = result[0]
+            except Exception as e:
+                download_console(f"文件存在檢查失敗: {e}，跳過檢查", level=LogLevel.WARNING)
+                existing_file = None
+            
             if existing_file:
                 # 文件已存在，返回特殊狀態讓前端顯示確認對話框
                 download_console(f"發現已存在的文件: {existing_file}")
@@ -839,11 +1139,17 @@ class Api(QObject):
                     }
                 return f"FILE_EXISTS:{existing_file}"
 
-            # 記錄任務的下載路徑
+            # 記錄任務路徑與格式，並標記此 URL 為正在下載（單一鎖區塊，不長期佔用）
+            download_console("[DBG] start_download 即將取得 _lock（記錄路徑）", level=LogLevel.DEBUG)
             with self._lock:
                 self.task_download_paths[str(task_id)] = resolved_download_dir
-            
-            download_console(f"任務 {task_id} 下載路徑已記錄: {resolved_download_dir}")
+                self.task_formats[str(task_id)] = fmt
+                self.task_urls[str(task_id)] = url
+                self.downloading_urls.add(url)
+            download_console("[DBG] start_download 已釋放 _lock（記錄路徑）", level=LogLevel.DEBUG)
+
+            download_console(f"任務 {task_id} 下載路徑已記錄: {resolved_download_dir}, 格式: {fmt}, URL: {url}")
+            download_console(f"開始下載任務 {task_id}，URL: {url}")
 
             # 丟給全域排程器（控制同時下載上限 + 重試）
             self.scheduler.submit(
@@ -864,12 +1170,17 @@ class Api(QObject):
     def confirm_redownload(self, task_id, should_delete):
         """確認是否重新下載（刪除舊文件）"""
         try:
+            download_console(f"[confirm_redownload] 開始處理任務 {task_id}, should_delete={should_delete}", level=LogLevel.INFO)
+            
+            # 先獲取待處理任務信息（在鎖內）
             with self._lock:
                 if not hasattr(self, '_pending_downloads'):
+                    download_console(f"[confirm_redownload] 沒有 _pending_downloads 屬性", level=LogLevel.WARNING)
                     return "沒有待處理的下載任務"
                 
                 pending = self._pending_downloads.get(str(task_id))
                 if not pending:
+                    download_console(f"[confirm_redownload] 找不到任務 {task_id} 在 _pending_downloads 中", level=LogLevel.WARNING)
                     return "找不到待處理的下載任務"
                 
                 url = pending['url']
@@ -879,116 +1190,125 @@ class Api(QObject):
                 resolved_download_dir = pending['downloads_dir']
                 add_resolution = pending['add_resolution']
                 existing_file = pending['existing_file']
+            
+            download_console(f"[confirm_redownload] 獲取到任務信息: url={url}, existing_file={existing_file}", level=LogLevel.INFO)
+            
+            # 如果用戶確認刪除，刪除舊文件（在後台線程執行，不阻塞 UI）
+            if should_delete:
+                import threading
                 
-                # 如果用戶確認刪除，刪除舊文件
-                if should_delete:
+                def delete_file_thread():
                     try:
                         if os.path.exists(existing_file):
                             os.remove(existing_file)
                             download_console(f"已刪除舊文件: {existing_file}", level=LogLevel.INFO)
+                        else:
+                            download_console(f"文件不存在，無需刪除: {existing_file}", level=LogLevel.INFO)
                     except Exception as e:
-                        download_console(f"刪除舊文件失敗: {e}", level=LogLevel.ERROR)
-                        return f"刪除舊文件失敗: {e}"
-                else:
-                    # 用戶取消，移除待處理任務
-                    del self._pending_downloads[str(task_id)]
-                    return "已取消下載"
+                        download_console(f"刪除舊文件失敗（將在下載時覆蓋）: {e}", level=LogLevel.WARNING)
+                        # 不返回錯誤，讓下載繼續進行（下載器會處理文件覆蓋）
                 
-                # 記錄任務的下載路徑
+                # 在單獨的線程中執行刪除操作，不等待完成
+                delete_thread = threading.Thread(target=delete_file_thread, daemon=True)
+                delete_thread.start()
+                # 不等待刪除完成，直接繼續執行下載（下載器會處理文件覆蓋）
+            else:
+                # 用戶取消，移除待處理任務和相關數據
+                with self._lock:
+                    if str(task_id) in self._pending_downloads:
+                        del self._pending_downloads[str(task_id)]
+                    # 清理任務相關數據
+                    self.task_download_paths.pop(str(task_id), None)
+                    self.task_formats.pop(str(task_id), None)
+                    self.task_urls.pop(str(task_id), None)
+                download_console(f"用戶取消任務 {task_id}，已清理相關數據", level=LogLevel.INFO)
+                return "已取消下載"
+            
+            # 記錄任務的下載路徑和格式（與 start_download 保持一致）
+            download_console(f"[confirm_redownload] 準備記錄任務信息", level=LogLevel.INFO)
+            with self._lock:
                 self.task_download_paths[str(task_id)] = resolved_download_dir
-                
-                # 開始下載，傳遞原始格式
-                self.scheduler.submit(
-                    task_id,
-                    url,
-                    normalized_quality,
-                    normalized_format,
-                    downloads_dir=resolved_download_dir,
-                    add_resolution_to_filename=add_resolution,
-                    original_format=original_format,
-                )
-                
-                # 移除待處理任務
-                del self._pending_downloads[str(task_id)]
-                
-                return "已加入下載佇列"
+                self.task_formats[str(task_id)] = original_format or normalized_format  # 記錄格式（如 mp3, mp4）
+                self.task_urls[str(task_id)] = url  # 記錄 URL
+                # 標記此 URL 為正在下載
+                self.downloading_urls.add(url)
+            
+            download_console(f"任務 {task_id} 下載路徑已記錄: {resolved_download_dir}, 格式: {original_format or normalized_format}, URL: {url}")
+            download_console(f"開始下載任務 {task_id}，URL: {url}")
+            
+            # 開始下載，傳遞原始格式
+            download_console(f"[confirm_redownload] 準備調用 scheduler.submit", level=LogLevel.INFO)
+            self.scheduler.submit(
+                task_id,
+                url,
+                normalized_quality,
+                normalized_format,
+                downloads_dir=resolved_download_dir,
+                add_resolution_to_filename=add_resolution,
+                original_format=original_format,
+            )
+            download_console(f"[confirm_redownload] scheduler.submit 調用完成", level=LogLevel.INFO)
+            
+            # 移除待處理任務
+            with self._lock:
+                if str(task_id) in self._pending_downloads:
+                    del self._pending_downloads[str(task_id)]
+                    download_console(f"[confirm_redownload] 已從 _pending_downloads 中移除任務 {task_id}", level=LogLevel.INFO)
+            
+            download_console(f"[confirm_redownload] 任務 {task_id} 處理完成，返回成功", level=LogLevel.INFO)
+            return "已加入下載佇列"
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
             download_console(f"確認重新下載失敗: {e}", level=LogLevel.ERROR)
+            download_console(f"錯誤堆棧: {error_trace}", level=LogLevel.ERROR)
             return f"失敗: {e}"
 
     @Slot(int, result=str)
     def open_file_location_by_task(self, task_id):
-        """根據任務ID開啟檔案所在資料夾"""
+        """
+        根據任務ID開啟檔案所在資料夾。
+        僅做同步的 dict 查詢後立即 return；實際開啟在背景線程執行，不碰主線程。
+        """
         try:
+            api_console(f"[DBG] open_file_location_by_task 進入 task_id={task_id}", level=LogLevel.DEBUG)
             if task_id is None:
-                return "任務ID不可用"
-            
+                return "失敗: 任務ID不可用"
             task_key = str(task_id).strip()
             if not task_key:
-                return "任務ID不可用"
-            
-            # 從任務追蹤中獲取檔案路徑
+                return "失敗: 任務ID不可用"
+
+            api_console("[DBG] open_file_location_by_task 即將取得 _lock", level=LogLevel.DEBUG)
             with self._lock:
                 file_path = self.task_download_paths.get(task_key)
-            
+            api_console("[DBG] open_file_location_by_task 已釋放 _lock", level=LogLevel.DEBUG)
             if not file_path:
-                return f"找不到任務 {task_key} 的檔案路徑"
-            
-            download_console(f"任務 {task_id} 的檔案路徑: {file_path}")
-            
-            # 檢查檔案是否存在
-            if os.path.exists(file_path):
-                # 在 Windows 上使用 explorer /select,
-                if sys.platform.startswith('win'):
-                    import subprocess
-                    try:
-                        if os.path.isdir(file_path):
-                            # 如果是資料夾，直接開啟
-                            subprocess.Popen(["explorer", file_path], 
-                                           creationflags=subprocess.CREATE_NO_WINDOW)
-                        else:
-                            # 如果是檔案，使用 /select, 選中檔案
-                            # 注意：/select, 後面必須緊跟路徑，不能有空格
-                            # 使用絕對路徑並確保路徑正確
-                            abs_path = os.path.abspath(file_path)
-                            # 使用 shell=True 確保命令正確執行
-                            subprocess.Popen(f'explorer /select,"{abs_path}"', 
-                                           shell=True,
-                                           creationflags=subprocess.CREATE_NO_WINDOW)
-                        api_console(f"已執行 explorer 命令開啟: {file_path}")
-                        return "已開啟檔案位置"
-                    except Exception as e:
-                        api_console(f"開啟檔案位置失敗: {e}", level=LogLevel.ERROR)
-                        # 嘗試開啟所在資料夾
-                        try:
-                            folder = os.path.dirname(file_path)
-                            subprocess.Popen(["explorer", folder], 
-                                           creationflags=subprocess.CREATE_NO_WINDOW)
-                            return "已開啟資料夾"
-                        except Exception as e2:
-                            api_console(f"開啟資料夾也失敗: {e2}", level=LogLevel.ERROR)
-                            return f"開啟失敗: {e2}"
-                else:
-                    # 其他平台開啟所在資料夾
-                    folder = os.path.dirname(file_path)
-                    import subprocess
-                    subprocess.Popen(["xdg-open", folder])
-                    return "已開啟資料夾"
-            else:
-                # 檔案不存在，嘗試開啟所在資料夾
-                folder = os.path.dirname(file_path)
-                if os.path.exists(folder):
-                    if sys.platform.startswith('win'):
-                        import subprocess
-                        subprocess.Popen(["explorer", folder], 
-                                       creationflags=subprocess.CREATE_NO_WINDOW)
-                        return "檔案不存在，已開啟所在資料夾"
+                api_console(f"[DBG] open_file_location_by_task 找不到路徑 task_key={task_key}", level=LogLevel.DEBUG)
+                return f"失敗: 找不到任務 {task_key} 的檔案路徑"
+
+            download_console(f"[open_file_location] 任務 {task_id} 的檔案路徑: {file_path}")
+
+            def _run_open():
+                err_msg = None
+                try:
+                    api_console("[DBG] _run_open 背景線程進入", level=LogLevel.DEBUG)
+                    if sys.platform.startswith("win"):
+                        _open_in_explorer_win(file_path)
                     else:
-                        import subprocess
-                        subprocess.Popen(["xdg-open", folder])
-                        return "檔案不存在，已開啟所在資料夾"
-                return f"檔案不存在: {file_path}"
-                
+                        folder = os.path.dirname(file_path) if os.path.isfile(file_path) else file_path
+                        if os.path.exists(folder):
+                            subprocess.Popen(["xdg-open", folder])
+                    api_console("[DBG] _run_open 背景線程完成", level=LogLevel.DEBUG)
+                except Exception as e:
+                    api_console(f"根據任務ID開啟檔案位置失敗: {e}", level=LogLevel.ERROR)
+                    err_msg = str(e)
+                if err_msg:
+                    QTimer.singleShot(0, lambda msg=err_msg: self._safe_eval_js("window.showModal", "錯誤", msg))
+
+            api_console("[DBG] open_file_location_by_task 即將 start 背景線程", level=LogLevel.DEBUG)
+            threading.Thread(target=_run_open, daemon=True).start()
+            api_console("[DBG] open_file_location_by_task 即將 return", level=LogLevel.DEBUG)
+            return "正在開啟檔案位置..."
         except Exception as e:
             api_console(f"根據任務ID開啟檔案位置失敗: {e}", level=LogLevel.ERROR)
             return f"失敗: {e}"
@@ -1043,19 +1363,21 @@ class Api(QObject):
             if not os.path.isabs(fp):
                 fp = os.path.abspath(fp)
             
+            # 在後台線程中執行開啟資料夾操作，與 open_file_location_by_task 同一套邏輯
+            def open_folder_thread():
+                try:
+                    if os.path.exists(fp):
+                        if sys.platform.startswith("win"):
+                            _open_in_explorer_win(fp)
+                        else:
+                            folder = os.path.dirname(fp) if os.path.isfile(fp) else fp
+                            subprocess.Popen(["xdg-open", folder])
+                except Exception as e:
+                    api_console(f"開啟資料夾時出錯: {e}", level=LogLevel.ERROR)
+
             if os.path.exists(fp):
-                # 在 Windows 上使用 explorer /select,
-                if sys.platform.startswith('win'):
-                    import subprocess
-                    # 直接傳遞路徑給 explorer，由 subprocess 處理跳脫
-                    subprocess.Popen(["explorer", "/select,", fp])
-                    return "已開啟檔案位置"
-                else:
-                    # 其他平台開啟所在資料夾
-                    folder = os.path.dirname(fp)
-                    import subprocess
-                    subprocess.Popen(["xdg-open", folder])
-                    return "已開啟資料夾"
+                threading.Thread(target=open_folder_thread, daemon=True).start()
+                return "正在開啟檔案位置..."
             return "檔案不存在"
         except Exception as e:
             api_console(f"開啟檔案位置失敗: {e}", level=LogLevel.ERROR)
